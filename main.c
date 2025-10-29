@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file %s\n", argv[1]);
-        return 1;
+        return 1;  // NEG #2
     }
 
     ensure_output_dir(argv[2]);
@@ -195,7 +195,7 @@ int main(int argc, char **argv) {
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file %s\n", argv[2]);
         fclose(fin);
-        return 1;
+        return 1;  // NEG #3
     }
 
     char op;
@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
             fprintf(fout, "%g\n", d);
     } else {
         fprintf(stderr, "Error: unknown operator '%c'\n", op);
-        ret = 1; // NEG #1 fix
+        ret = 1;  // NEG #1 fix
     }
 
     freeM(A);
