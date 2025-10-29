@@ -46,7 +46,6 @@ static void writeM(FILE *f, const Matrix *M) {
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
             double v = M->a[i * M->c + j];
-            if (isnan(v)) v = INFINITY; // convert NaN → inf for Pow #10
             fprintf(f, "%g", v);
             if (j + 1 < M->c) fputc(' ', f);
         }
@@ -54,7 +53,7 @@ static void writeM(FILE *f, const Matrix *M) {
     }
 }
 
-/* blocked matrix multiplication */
+/* blocked matrix multiplication (fast) */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
@@ -173,21 +172,21 @@ int main(int argc, char **argv) {
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
-        return 1;   // NEG #2
+        exit(1);   // NEG #2
     }
     ensure_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fclose(fin);
-        return 1;   // NEG #3
+        exit(1);   // NEG #3
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
         fclose(fin); fclose(fout);
-        return 1;   // NEG #0
+        exit(1);   // NEG #0
     }
 
     Matrix *A = readM(fin);
@@ -230,7 +229,7 @@ int main(int argc, char **argv) {
         freeM(A);
         fclose(fin);
         fclose(fout);
-        return 1;   // NEG #1
+        exit(1);   // NEG #1
     }
 
     freeM(A);
