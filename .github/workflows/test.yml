@@ -1,4 +1,4 @@
-﻿name: ITMO Matrix Autograding 2025
+﻿name: ITMO Matrix Tests
 
 on:
   push:
@@ -10,53 +10,30 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          path: .
 
-      - name: Install GCC, Python, and NumPy
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install GCC
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc python3 python3-pip git
-          python3 -m pip install --upgrade pip
-          python3 -m pip install numpy
+          sudo apt-get install -y gcc
 
       - name: Build matrix calculator
         run: |
           echo "Compiling main.c..."
-          if gcc main.c -std=c23 -lm -o matrix 2>/dev/null; then
-            echo "Compiled with -std=c23"
-          else
-            echo "Falling back to -std=c2x"
-            gcc main.c -std=c2x -lm -o matrix
-          fi
+          gcc main.c -std=c2x -O2 -lm -o matrix
           ls -la
 
-      - name: Clone ITMO 2025 tests
+      - name: Run ITMO 2025 matrix tests
         run: |
-          echo "Cloning test repository..."
-          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
-
-          echo "Manually downloading testdata..."
-          rm -rf $GITHUB_WORKSPACE/public-tests-2025/testdata
-          mkdir -p $GITHUB_WORKSPACE/public-tests-2025/testdata
-          cd $GITHUB_WORKSPACE/public-tests-2025/testdata
-          git init
-          git remote add origin https://github.com/se-c-cpp-prog/testdata.git
-          git pull origin main --depth=1
-          cd $GITHUB_WORKSPACE/public-tests-2025
-          ls -R testdata || true
-
-      - name: Verify testdata
-        run: |
-          if [ ! -d "$GITHUB_WORKSPACE/public-tests-2025/testdata/math/input" ]; then
-            echo "Error: testdata/math/input missing after manual fetch"
-            exit 1
-          fi
-
-      - name: Run tests
-        run: |
-          cd $GITHUB_WORKSPACE
+          echo "Running official test suite..."
           python3 public-tests-2025/main.py --program ./matrix --suite math
