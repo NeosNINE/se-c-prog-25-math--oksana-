@@ -1,0 +1,39 @@
+﻿name: ITMO Matrix Autograding
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up C compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Build project
+        run: |
+          gcc main.c -std=c23 -lm -o matrix
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Clone ITMO test suite
+        run: |
+          git clone https://github.com/se-c-cpp-prog/itmo-tests.git
+          cd itmo-tests
+          ls
+
+      - name: Run tests
+        run: |
+          cd itmo-tests
+          python3 main.py --program ../matrix --suite math

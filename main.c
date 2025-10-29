@@ -1,231 +1,213 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <math.h>
 
 typedef struct {
-    size_t r, c;
-    double *a;
-} Mat;
+    int rows;
+    int cols;
+    float **data;
+} Matrix;
 
-static void fail(const char *msg) {
-    fprintf(stderr, "%s\n", msg);
-    exit(1);
-}
-
-static Mat newmat(size_t r, size_t c) {
-    Mat m = {r, c, calloc(r * c, sizeof(double))};
-    if (!m.a) fail("alloc");
+Matrix alloc_matrix(int r, int c) {
+    Matrix m;
+    m.rows = r;
+    m.cols = c;
+    m.data = malloc(r * sizeof(float *));
+    for (int i = 0; i < r; i++)
+        m.data[i] = malloc(c * sizeof(float));
     return m;
 }
 
-static void freemat(Mat *m) {
-    free(m->a);
-    m->a = NULL;
+void free_matrix(Matrix m) {
+    for (int i = 0; i < m.rows; i++)
+        free(m.data[i]);
+    free(m.data);
 }
 
-static double *at(Mat *m, size_t i, size_t j) {
-    return &m->a[i * m->c + j];
-}
-
-static double get(const Mat *m, size_t i, size_t j) {
-    return m->a[i * m->c + j];
-}
-
-static Mat readmat(FILE *f) {
-    size_t r, c;
-    if (fscanf(f, "%zu%zu", &r, &c) != 2) fail("bad header");
-    Mat m = newmat(r, c);
-    for (size_t i = 0; i < r; i++)
-        for (size_t j = 0; j < c; j++)
-            if (fscanf(f, "%lf", &m.a[i * c + j]) != 1)
-                fail("bad data");
+Matrix read_matrix(FILE *f) {
+    int r, c;
+    if (fscanf(f, "%d %d", &r, &c) != 2)
+        exit(1);
+    Matrix m = alloc_matrix(r, c);
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            if (fscanf(f, "%f", &m.data[i][j]) != 1)
+                exit(1);
     return m;
 }
 
-static void writemat(FILE *g, const Mat *m) {
-    fprintf(g, "%zu %zu\n", m->r, m->c);
-    for (size_t i = 0; i < m->r; i++) {
-        for (size_t j = 0; j < m->c; j++) {
-            if (j) fputc(' ', g);
-            double x = get(m, i, j);
-            if (isnan(x)) fputs("nan", g);
-            else if (isinf(x)) fputs(signbit(x) ? "-inf" : "inf", g);
-            else fprintf(g, "%.10g", x);
+void print_matrix(FILE *out, Matrix m) {
+    for (int i = 0; i < m.rows; i++) {
+        for (int j = 0; j < m.cols; j++) {
+            fprintf(out, "%g", m.data[i][j]);
+            if (j + 1 < m.cols) fprintf(out, " ");
         }
-        fputc('\n', g);
+        fprintf(out, "\n");
     }
 }
 
-static void writescalar(FILE *g, double x) {
-    if (isnan(x)) fputs("nan\n", g);
-    else if (isinf(x)) fputs(signbit(x) ? "-inf\n" : "inf\n", g);
-    else fprintf(g, "%.10g\n", x);
+Matrix add_matrix(Matrix a, Matrix b, int sign) {
+    if (a.rows != b.rows || a.cols != b.cols) {
+        Matrix empty = {0,0,NULL};
+        return empty;
+    }
+    Matrix r = alloc_matrix(a.rows, a.cols);
+    for (int i = 0; i < a.rows; i++)
+        for (int j = 0; j < a.cols; j++)
+            r.data[i][j] = a.data[i][j] + sign * b.data[i][j];
+    return r;
 }
 
-static Mat addsub(const Mat *A, const Mat *B, int s) {
-    if (A->r != B->r || A->c != B->c) fail("dim");
-    Mat C = newmat(A->r, A->c);
-    for (size_t i = 0; i < A->r * A->c; i++)
-        C.a[i] = A->a[i] + s * B->a[i];
-    return C;
+Matrix mul_matrix(Matrix a, Matrix b) {
+    if (a.cols != b.rows) {
+        Matrix empty = {0,0,NULL};
+        return empty;
+    }
+    Matrix r = alloc_matrix(a.rows, b.cols);
+    for (int i = 0; i < a.rows; i++)
+        for (int j = 0; j < b.cols; j++) {
+            r.data[i][j] = 0;
+            for (int k = 0; k < a.cols; k++)
+                r.data[i][j] += a.data[i][k] * b.data[k][j];
+        }
+    return r;
 }
 
-static Mat mul(const Mat *A, const Mat *B) {
-    if (A->c != B->r) fail("dim");
-    Mat C = newmat(A->r, B->c);
-    for (size_t i = 0; i < A->r; i++)
-        for (size_t k = 0; k < A->c; k++) {
-            double v = get(A, i, k);
-            if (v == 0) continue;
-            for (size_t j = 0; j < B->c; j++)
-                *at(&C, i, j) += v * get(B, k, j);
+float det(Matrix m) {
+    if (m.rows != m.cols)
+        return NAN;
+    int n = m.rows;
+    float **a = malloc(n * sizeof(float *));
+    for (int i = 0; i < n; i++) {
+        a[i] = malloc(n * sizeof(float));
+        for (int j = 0; j < n; j++)
+            a[i][j] = m.data[i][j];
+    }
+    float det = 1;
+    for (int i = 0; i < n; i++) {
+        int pivot = i;
+        for (int j = i + 1; j < n; j++)
+            if (fabs(a[j][i]) > fabs(a[pivot][i]))
+                pivot = j;
+        if (fabs(a[pivot][i]) < 1e-9) {
+            det = 0;
+            break;
         }
-    return C;
-}
-
-static double det(const Mat *A) {
-    if (A->r != A->c) return NAN;
-    size_t n = A->r;
-    Mat M = newmat(n, n);
-    memcpy(M.a, A->a, n * n * sizeof(double));
-    double d = 1;
-    int s = 1;
-    for (size_t i = 0; i < n; i++) {
-        size_t p = i;
-        double best = fabs(get(&M, i, i));
-        for (size_t r = i + 1; r < n; r++) {
-            double v = fabs(get(&M, r, i));
-            if (v > best) {
-                best = v;
-                p = r;
-            }
+        if (pivot != i) {
+            float *tmp = a[i];
+            a[i] = a[pivot];
+            a[pivot] = tmp;
+            det = -det;
         }
-        if (best == 0) {
-            d = 0;
-            goto done;
-        }
-        if (p != i) {
-            for (size_t j = 0; j < n; j++) {
-                double t = get(&M, i, j);
-                *at(&M, i, j) = get(&M, p, j);
-                *at(&M, p, j) = t;
-            }
-            s = -s;
-        }
-        double piv = get(&M, i, i);
-        d *= piv;
-        for (size_t r = i + 1; r < n; r++) {
-            double f = get(&M, r, i) / piv;
-            for (size_t j = i + 1; j < n; j++)
-                *at(&M, r, j) -= f * get(&M, i, j);
+        det *= a[i][i];
+        for (int j = i + 1; j < n; j++) {
+            float f = a[j][i] / a[i][i];
+            for (int k = i; k < n; k++)
+                a[j][k] -= f * a[i][k];
         }
     }
-done:
-    freemat(&M);
-    return d * s;
+    for (int i = 0; i < n; i++)
+        free(a[i]);
+    free(a);
+    return det;
 }
 
-static Mat id(size_t n) {
-    Mat I = newmat(n, n);
-    for (size_t i = 0; i < n; i++)
-        *at(&I, i, i) = 1;
+Matrix identity(int n) {
+    Matrix I = alloc_matrix(n, n);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            I.data[i][j] = (i == j) ? 1 : 0;
     return I;
 }
 
-static Mat power(const Mat *A, long long k) {
-    if (A->r != A->c) {
-        Mat Z = newmat(1, 1);
-        Z.a[0] = NAN;
-        return Z;
+Matrix power_matrix(Matrix m, int p) {
+    if (m.rows != m.cols || p < 0) {
+        Matrix empty = {0,0,NULL};
+        return empty;
     }
-    if (k < 0) {
-        Mat Z = newmat(A->r, A->c);
-        for (size_t i = 0; i < Z.r * Z.c; i++) Z.a[i] = NAN;
-        return Z;
+    if (p == 0)
+        return identity(m.rows);
+    Matrix result = alloc_matrix(m.rows, m.cols);
+    for (int i = 0; i < m.rows; i++)
+        for (int j = 0; j < m.cols; j++)
+            result.data[i][j] = m.data[i][j];
+    for (int i = 1; i < p; i++) {
+        Matrix temp = mul_matrix(result, m);
+        free_matrix(result);
+        result = temp;
     }
-    Mat res = id(A->r);
-    Mat base = newmat(A->r, A->c);
-    memcpy(base.a, A->a, A->r * A->c * sizeof(double));
-    while (k > 0) {
-        if (k & 1) {
-            Mat t = mul(&res, &base);
-            freemat(&res);
-            res = t;
-        }
-        k >>= 1;
-        if (k) {
-            Mat t = mul(&base, &base);
-            freemat(&base);
-            base = t;
-        }
-    }
-    freemat(&base);
-    return res;
+    return result;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "usage: %s <input_file> <output_file>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <input> <output>\n", argv[0]);
         return 1;
     }
 
-    FILE *f = fopen(argv[1], "r");
-    if (!f) {
-        perror("input");
-        return 1;
-    }
-    FILE *g = fopen(argv[2], "w");
-    if (!g) {
-        perror("output");
-        fclose(f);
+    FILE *in = fopen(argv[1], "r");
+    if (!in) {
+        fprintf(stderr, "Cannot open input file\n");
         return 1;
     }
 
-    char op[16];
-    if (fscanf(f, "%15s", op) != 1) {
-        fclose(f);
-        fclose(g);
+    FILE *out = fopen(argv[2], "w");
+    if (!out) {
+        fclose(in);
+        fprintf(stderr, "Cannot open output file\n");
         return 1;
     }
 
-    if (!strcmp(op, "det")) {
-        Mat A = readmat(f);
-        double d = det(&A);
-        writescalar(g, d);
-        freemat(&A);
-    } else if (!strcmp(op, "mul")) {
-        Mat A = readmat(f), B = readmat(f);
-        Mat C = mul(&A, &B);
-        writemat(g, &C);
-        freemat(&A);
-        freemat(&B);
-        freemat(&C);
-    } else if (!strcmp(op, "sum")) {
-        Mat A = readmat(f), B = readmat(f);
-        Mat C = addsub(&A, &B, +1);
-        writemat(g, &C);
-        freemat(&A);
-        freemat(&B);
-        freemat(&C);
-    } else if (!strcmp(op, "sub")) {
-        Mat A = readmat(f), B = readmat(f);
-        Mat C = addsub(&A, &B, -1);
-        writemat(g, &C);
-        freemat(&A);
-        freemat(&B);
-        freemat(&C);
-    } else if (!strcmp(op, "pow")) {
-        Mat A = readmat(f);
-        long long k;
-        if (fscanf(f, "%lld", &k) != 1) k = 1;
-        Mat P = power(&A, k);
-        writemat(g, &P);
-        freemat(&A);
-        freemat(&P);
-    } else fail("bad op");
+    char op;
+    if (fscanf(in, " %c", &op) != 1) {
+        fprintf(stderr, "Invalid input\n");
+        fclose(in); fclose(out);
+        return 1;
+    }
 
-    fclose(f);
-    fclose(g);
+    Matrix A = read_matrix(in);
+    Matrix B;
+    Matrix result;
+    int p;
+
+    switch (op) {
+        case '+':
+        case '-':
+            B = read_matrix(in);
+            result = add_matrix(A, B, op == '+' ? 1 : -1);
+            if (result.data == NULL) fprintf(out, "no solution\n");
+            else { print_matrix(out, result); free_matrix(result); }
+            free_matrix(B);
+            break;
+        case '*':
+            B = read_matrix(in);
+            result = mul_matrix(A, B);
+            if (result.data == NULL) fprintf(out, "no solution\n");
+            else { print_matrix(out, result); free_matrix(result); }
+            free_matrix(B);
+            break;
+        case '^':
+            if (fscanf(in, "%d", &p) != 1) {
+                fprintf(stderr, "Invalid power\n");
+                fclose(in); fclose(out);
+                return 1;
+            }
+            result = power_matrix(A, p);
+            if (result.data == NULL) fprintf(out, "no solution\n");
+            else { print_matrix(out, result); free_matrix(result); }
+            break;
+        case '|': {
+            float d = det(A);
+            if (isnan(d)) fprintf(out, "no solution\n");
+            else fprintf(out, "%g\n", d);
+            break;
+        }
+        default:
+            fprintf(out, "no solution\n");
+    }
+
+    free_matrix(A);
+    fclose(in);
+    fclose(out);
     return 0;
 }
