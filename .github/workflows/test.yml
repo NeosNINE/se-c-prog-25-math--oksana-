@@ -34,10 +34,15 @@ jobs:
           echo "Cloning public-tests-2025..."
           git clone --depth 1 https://github.com/se-c-cpp-prog/public-tests-2025.git
 
-          echo "Fetching testdata archive..."
+          echo "Fetching testdata archive (zip)..."
           cd public-tests-2025
-          curl -L -O https://github.com/se-c-cpp-prog/testdata/archive/refs/heads/main.zip
-          unzip -q main.zip
+          curl -LJO https://github.com/se-c-cpp-prog/testdata/archive/refs/heads/main.zip
+
+          echo "Checking downloaded file..."
+          ls -lh main.zip || true
+          file main.zip || true
+          unzip -q main.zip || (echo "Unzip failed — corrupted download" && exit 1)
+
           mv testdata-main testdata
           rm main.zip
           ls -R testdata | head -30
@@ -51,5 +56,5 @@ jobs:
 
       - name: Run ITMO 2025 matrix tests
         run: |
-          echo "Running test suite..."
+          echo "Running official tests..."
           python3 public-tests-2025/main.py --program ./matrix --suite math
