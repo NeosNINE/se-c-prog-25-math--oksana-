@@ -23,14 +23,10 @@ static Matrix *allocM(int r, int c) {
     if (!M) return NULL;
     M->r = r;
     M->c = c;
-    if (r == 0 || c == 0) {
-        M->a = NULL;
-    } else {
-        M->a = calloc((size_t)r * c, sizeof(double));
-        if (!M->a) {
-            free(M);
-            return NULL;
-        }
+    M->a = (r && c) ? calloc((size_t)r * c, sizeof(double)) : NULL;
+    if (r && c && !M->a) {
+        free(M);
+        return NULL;
     }
     return M;
 }
@@ -56,7 +52,6 @@ static Matrix *readM(FILE *f) {
 }
 
 static void writeM(FILE *f, const Matrix *M) {
-    if (!M) return;
     fprintf(f, "%d %d\n", M->r, M->c);
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
@@ -219,47 +214,38 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    int ret = 0;
+
     if (op == '+' || op == '-' || op == '*') {
         Matrix *B = readM(fin);
         if (!B) {
             fprintf(fout, "no solution\n");
-            freeM(A);
-            fclose(fin);
-            fclose(fout);
-            return 0;
+        } else {
+            Matrix *R = NULL;
+            if (op == '+') R = sumM(A, B);
+            else if (op == '-') R = subM(A, B);
+            else R = mulM(A, B);
+            if (!R) fprintf(fout, "no solution\n");
+            else {
+                writeM(fout, R);
+                freeM(R);
+            }
+            freeM(B);
         }
-        Matrix *R = NULL;
-        if (op == '+') R = sumM(A, B);
-        else if (op == '-') R = subM(A, B);
-        else R = mulM(A, B);
-        if (!R)
-            fprintf(fout, "no solution\n");
-        else {
-            writeM(fout, R);
-            freeM(R);
-        }
-        freeM(A);
-        freeM(B);
     } else if (op == '^') {
         long long p;
         if (fscanf(fin, "%lld", &p) != 1) {
             fprintf(fout, "no solution\n");
-            freeM(A);
-            fclose(fin);
-            fclose(fout);
-            return 0;
+        } else {
+            Matrix *R = powM(A, p);
+            if (!R) fprintf(fout, "no solution\n");
+            else {
+                writeM(fout, R);
+                freeM(R);
+            }
         }
-        Matrix *R = powM(A, p);
-        if (!R)
-            fprintf(fout, "no solution\n");
-        else {
-            writeM(fout, R);
-            freeM(R);
-        }
-        freeM(A);
     } else if (op == '|') {
         double d = detM(A);
-        freeM(A);
         if (isnan(d))
             fprintf(fout, "no solution\n");
         else if (isinf(d))
@@ -268,13 +254,11 @@ int main(int argc, char **argv) {
             fprintf(fout, "%g\n", d);
     } else {
         fprintf(stderr, "Error: unknown operator '%c'\n", op);
-        freeM(A);
-        fclose(fin);
-        fclose(fout);
-        return 1;
+        ret = 1; // NEG #1 fix
     }
 
+    freeM(A);
     fclose(fin);
     fclose(fout);
-    return 0;
+    return ret;
 }
