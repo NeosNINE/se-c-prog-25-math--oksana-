@@ -251,11 +251,12 @@ int main(int argc, char **argv) {
         else fprintf(fout, "%g\n", d);
     }
     else {
+        // NEG #1 invalid operator
         fprintf(stderr, "Error: unknown operator '%c'\n", op);
         freeM(A);
         fclose(fin);
         fclose(fout);
-        return 1; // NEG #1
+        return 1;
     }
 
     freeM(A);
