@@ -1,213 +1,237 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
+
+#define MAX 256
 
 typedef struct {
-    int rows;
-    int cols;
+    int rows, cols;
     float **data;
 } Matrix;
 
 Matrix alloc_matrix(int r, int c) {
     Matrix m;
-    m.rows = r;
-    m.cols = c;
+    m.rows = r; m.cols = c;
     m.data = malloc(r * sizeof(float *));
-    for (int i = 0; i < r; i++)
+    for (int i = 0; i < r; ++i)
         m.data[i] = malloc(c * sizeof(float));
     return m;
 }
 
-void free_matrix(Matrix m) {
-    for (int i = 0; i < m.rows; i++)
-        free(m.data[i]);
-    free(m.data);
+void free_matrix(Matrix *m) {
+    for (int i = 0; i < m->rows; ++i)
+        free(m->data[i]);
+    free(m->data);
+    m->rows = m->cols = 0;
+    m->data = NULL;
 }
 
-Matrix read_matrix(FILE *f) {
-    int r, c;
-    if (fscanf(f, "%d %d", &r, &c) != 2)
-        exit(1);
+Matrix read_matrix(FILE *f, int r, int c) {
     Matrix m = alloc_matrix(r, c);
-    for (int i = 0; i < r; i++)
-        for (int j = 0; j < c; j++)
-            if (fscanf(f, "%f", &m.data[i][j]) != 1)
-                exit(1);
+    for (int i = 0; i < r; ++i)
+        for (int j = 0; j < c; ++j)
+            fscanf(f, "%f", &m.data[i][j]);
     return m;
 }
 
-void print_matrix(FILE *out, Matrix m) {
-    for (int i = 0; i < m.rows; i++) {
-        for (int j = 0; j < m.cols; j++) {
-            fprintf(out, "%g", m.data[i][j]);
-            if (j + 1 < m.cols) fprintf(out, " ");
+void print_matrix(Matrix m, FILE *f) {
+    for (int i = 0; i < m.rows; ++i) {
+        for (int j = 0; j < m.cols; ++j) {
+            fprintf(f, "%g", m.data[i][j]);
+            if (j < m.cols - 1) fprintf(f, " ");
         }
-        fprintf(out, "\n");
+        fprintf(f, "\n");
     }
 }
 
-Matrix add_matrix(Matrix a, Matrix b, int sign) {
-    if (a.rows != b.rows || a.cols != b.cols) {
-        Matrix empty = {0,0,NULL};
-        return empty;
-    }
+Matrix add_matrix(Matrix a, Matrix b) {
     Matrix r = alloc_matrix(a.rows, a.cols);
-    for (int i = 0; i < a.rows; i++)
-        for (int j = 0; j < a.cols; j++)
-            r.data[i][j] = a.data[i][j] + sign * b.data[i][j];
+    for (int i = 0; i < a.rows; ++i)
+        for (int j = 0; j < a.cols; ++j)
+            r.data[i][j] = a.data[i][j] + b.data[i][j];
+    return r;
+}
+
+Matrix sub_matrix(Matrix a, Matrix b) {
+    Matrix r = alloc_matrix(a.rows, a.cols);
+    for (int i = 0; i < a.rows; ++i)
+        for (int j = 0; j < a.cols; ++j)
+            r.data[i][j] = a.data[i][j] - b.data[i][j];
     return r;
 }
 
 Matrix mul_matrix(Matrix a, Matrix b) {
-    if (a.cols != b.rows) {
-        Matrix empty = {0,0,NULL};
-        return empty;
-    }
     Matrix r = alloc_matrix(a.rows, b.cols);
-    for (int i = 0; i < a.rows; i++)
-        for (int j = 0; j < b.cols; j++) {
-            r.data[i][j] = 0;
-            for (int k = 0; k < a.cols; k++)
+    for (int i = 0; i < a.rows; ++i)
+        for (int j = 0; j < b.cols; ++j) {
+            r.data[i][j] = 0.0f;
+            for (int k = 0; k < a.cols; ++k)
                 r.data[i][j] += a.data[i][k] * b.data[k][j];
         }
     return r;
 }
 
 float det(Matrix m) {
-    if (m.rows != m.cols)
-        return NAN;
-    int n = m.rows;
-    float **a = malloc(n * sizeof(float *));
-    for (int i = 0; i < n; i++) {
-        a[i] = malloc(n * sizeof(float));
-        for (int j = 0; j < n; j++)
-            a[i][j] = m.data[i][j];
+    if (m.rows == 1) return m.data[0][0];
+    if (m.rows == 2)
+        return m.data[0][0]*m.data[1][1] - m.data[0][1]*m.data[1][0];
+
+    float d = 0.0f;
+    for (int p = 0; p < m.cols; ++p) {
+        Matrix sub = alloc_matrix(m.rows - 1, m.cols - 1);
+        for (int i = 1; i < m.rows; ++i) {
+            int colIndex = 0;
+            for (int j = 0; j < m.cols; ++j) {
+                if (j == p) continue;
+                sub.data[i-1][colIndex++] = m.data[i][j];
+            }
+        }
+        float sign = (p % 2 == 0) ? 1.0f : -1.0f;
+        d += sign * m.data[0][p] * det(sub);
+        free_matrix(&sub);
     }
-    float det = 1;
-    for (int i = 0; i < n; i++) {
-        int pivot = i;
-        for (int j = i + 1; j < n; j++)
-            if (fabs(a[j][i]) > fabs(a[pivot][i]))
-                pivot = j;
-        if (fabs(a[pivot][i]) < 1e-9) {
-            det = 0;
-            break;
-        }
-        if (pivot != i) {
-            float *tmp = a[i];
-            a[i] = a[pivot];
-            a[pivot] = tmp;
-            det = -det;
-        }
-        det *= a[i][i];
-        for (int j = i + 1; j < n; j++) {
-            float f = a[j][i] / a[i][i];
-            for (int k = i; k < n; k++)
-                a[j][k] -= f * a[i][k];
-        }
-    }
-    for (int i = 0; i < n; i++)
-        free(a[i]);
-    free(a);
-    return det;
+    return d;
 }
 
-Matrix identity(int n) {
-    Matrix I = alloc_matrix(n, n);
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-            I.data[i][j] = (i == j) ? 1 : 0;
-    return I;
+Matrix power_matrix(Matrix a, int n) {
+    if (n == 0) {
+        Matrix id = alloc_matrix(a.rows, a.cols);
+        for (int i = 0; i < a.rows; ++i)
+            for (int j = 0; j < a.cols; ++j)
+                id.data[i][j] = (i == j) ? 1.0f : 0.0f;
+        return id;
+    }
+    if (n == 1) {
+        Matrix c = alloc_matrix(a.rows, a.cols);
+        for (int i = 0; i < a.rows; ++i)
+            for (int j = 0; j < a.cols; ++j)
+                c.data[i][j] = a.data[i][j];
+        return c;
+    }
+    Matrix res = alloc_matrix(a.rows, a.cols);
+    for (int i = 0; i < a.rows; ++i)
+        for (int j = 0; j < a.cols; ++j)
+            res.data[i][j] = (i == j) ? 1.0f : 0.0f;
+
+    Matrix base = a;
+    for (int i = 0; i < n; ++i) {
+        Matrix tmp = mul_matrix(res, base);
+        free_matrix(&res);
+        res = tmp;
+    }
+    return res;
 }
 
-Matrix power_matrix(Matrix m, int p) {
-    if (m.rows != m.cols || p < 0) {
-        Matrix empty = {0,0,NULL};
-        return empty;
-    }
-    if (p == 0)
-        return identity(m.rows);
-    Matrix result = alloc_matrix(m.rows, m.cols);
-    for (int i = 0; i < m.rows; i++)
-        for (int j = 0; j < m.cols; j++)
-            result.data[i][j] = m.data[i][j];
-    for (int i = 1; i < p; i++) {
-        Matrix temp = mul_matrix(result, m);
-        free_matrix(result);
-        result = temp;
-    }
-    return result;
-}
-
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
+int main(int argc, char **argv) {
+    if (argc < 3) {
         fprintf(stderr, "Usage: %s <input> <output>\n", argv[0]);
         return 1;
     }
 
-    FILE *in = fopen(argv[1], "r");
-    if (!in) {
-        fprintf(stderr, "Cannot open input file\n");
-        return 1;
-    }
-
-    FILE *out = fopen(argv[2], "w");
-    if (!out) {
-        fclose(in);
-        fprintf(stderr, "Cannot open output file\n");
+    FILE *fin = fopen(argv[1], "r");
+    FILE *fout = fopen(argv[2], "w");
+    if (!fin || !fout) {
+        fprintf(stderr, "File error.\n");
         return 1;
     }
 
     char op;
-    if (fscanf(in, " %c", &op) != 1) {
-        fprintf(stderr, "Invalid input\n");
-        fclose(in); fclose(out);
+    if (fscanf(fin, " %c", &op) != 1) {
+        fprintf(stderr, "Invalid input.\n");
         return 1;
     }
 
-    Matrix A = read_matrix(in);
+    int ar, ac;
+    if (fscanf(fin, "%d %d", &ar, &ac) != 2) {
+        fprintf(stderr, "Invalid matrix size.\n");
+        return 1;
+    }
+
+    Matrix A = read_matrix(fin, ar, ac);
+
+    if (op == '|') {
+        float d = det(A);
+        fprintf(fout, "%g\n", d);
+        free_matrix(&A);
+        fclose(fin);
+        fclose(fout);
+        return 0;
+    }
+
+    // second operand
+    int br, bc;
     Matrix B;
-    Matrix result;
     int p;
+    if (op == '^') {
+        if (fscanf(fin, "%d", &p) != 1) {
+            fprintf(stderr, "Missing exponent.\n");
+            return 1;
+        }
+    } else {
+        if (fscanf(fin, "%d %d", &br, &bc) != 2) {
+            fprintf(stderr, "Missing second matrix size.\n");
+            return 1;
+        }
+        B = read_matrix(fin, br, bc);
+    }
+
+    Matrix R;
 
     switch (op) {
         case '+':
-        case '-':
-            B = read_matrix(in);
-            result = add_matrix(A, B, op == '+' ? 1 : -1);
-            if (result.data == NULL) fprintf(out, "no solution\n");
-            else { print_matrix(out, result); free_matrix(result); }
-            free_matrix(B);
-            break;
-        case '*':
-            B = read_matrix(in);
-            result = mul_matrix(A, B);
-            if (result.data == NULL) fprintf(out, "no solution\n");
-            else { print_matrix(out, result); free_matrix(result); }
-            free_matrix(B);
-            break;
-        case '^':
-            if (fscanf(in, "%d", &p) != 1) {
-                fprintf(stderr, "Invalid power\n");
-                fclose(in); fclose(out);
-                return 1;
+            if (ar != br || ac != bc) {
+                fprintf(fout, "no solution\n");
+                break;
             }
-            result = power_matrix(A, p);
-            if (result.data == NULL) fprintf(out, "no solution\n");
-            else { print_matrix(out, result); free_matrix(result); }
+            R = add_matrix(A, B);
+            print_matrix(R, fout);
+            free_matrix(&R);
             break;
-        case '|': {
-            float d = det(A);
-            if (isnan(d)) fprintf(out, "no solution\n");
-            else fprintf(out, "%g\n", d);
+
+        case '-':
+            if (ar != br || ac != bc) {
+                fprintf(fout, "no solution\n");
+                break;
+            }
+            R = sub_matrix(A, B);
+            print_matrix(R, fout);
+            free_matrix(&R);
             break;
-        }
+
+        case '*':
+            if (ac != br) {
+                fprintf(fout, "no solution\n");
+                break;
+            }
+            R = mul_matrix(A, B);
+            print_matrix(R, fout);
+            free_matrix(&R);
+            break;
+
+        case '^':
+            if (ar != ac) {
+                fprintf(fout, "no solution\n");
+                break;
+            }
+            R = power_matrix(A, p);
+            print_matrix(R, fout);
+            free_matrix(&R);
+            break;
+
         default:
-            fprintf(out, "no solution\n");
+            fprintf(stderr, "Unknown operator.\n");
+            break;
     }
 
-    free_matrix(A);
-    fclose(in);
-    fclose(out);
+    // mandatory trailing newline
+    fseek(fout, 0, SEEK_END);
+    long size = ftell(fout);
+    if (size > 0) fprintf(fout, "\n");
+
+    free_matrix(&A);
+    if (op != '^') free_matrix(&B);
+    fclose(fin);
+    fclose(fout);
     return 0;
 }
