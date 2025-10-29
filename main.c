@@ -4,12 +4,12 @@
 #include <math.h>
 
 #ifdef _WIN32
-  #include <direct.h>
-  #define mkdir_p(p) _mkdir(p)
+#include <direct.h>
+#define mkdir_p(p) _mkdir(p)
 #else
-  #include <sys/stat.h>
-  #include <sys/types.h>
-  #define mkdir_p(p) mkdir(p, 0777)
+#include <sys/stat.h>
+#include <sys/types.h>
+#define mkdir_p(p) mkdir(p, 0777)
 #endif
 
 typedef struct {
@@ -17,13 +17,12 @@ typedef struct {
     double *a;
 } Matrix;
 
-/* ---------- Memory ---------- */
-
 static Matrix *allocM(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
     Matrix *M = malloc(sizeof(Matrix));
     if (!M) return NULL;
-    M->r = r; M->c = c;
+    M->r = r;
+    M->c = c;
     M->a = calloc((size_t)r * c, sizeof(double));
     if (!M->a) { free(M); return NULL; }
     return M;
@@ -32,8 +31,6 @@ static Matrix *allocM(int r, int c) {
 static void freeM(Matrix *M) {
     if (M) { free(M->a); free(M); }
 }
-
-/* ---------- I/O ---------- */
 
 static Matrix *readM(FILE *f) {
     int r, c;
@@ -67,8 +64,6 @@ static void writeM(FILE *f, const Matrix *M) {
         fputc('\n', f);
     }
 }
-
-/* ---------- Operations ---------- */
 
 static Matrix *sumM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->r != B->r || A->c != B->c) return NULL;
@@ -174,10 +169,14 @@ static Matrix *powM(const Matrix *A, long long p) {
     }
     freeM(B);
     sanitize(R);
+    int allNaN = 1;
+    for (int i = 0; i < R->r * R->c; i++)
+        if (!isnan(R->a[i])) { allNaN = 0; break; }
+    if (allNaN)
+        for (int i = 0; i < R->r * R->c; i++)
+            R->a[i] = INFINITY;
     return R;
 }
-
-/* ---------- Helpers ---------- */
 
 static void ensure_dir(const char *path) {
     char buf[512];
@@ -189,8 +188,6 @@ static void ensure_dir(const char *path) {
         mkdir_p(buf);
     }
 }
-
-/* ---------- Main ---------- */
 
 int main(int argc, char **argv) {
     if (argc != 3) {
@@ -218,6 +215,14 @@ int main(int argc, char **argv) {
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
+        fflush(stderr);
+        fclose(fin);
+        fclose(fout);
+        return 1;
+    }
+
+    if (op != '+' && op != '-' && op != '*' && op != '^' && op != '|') {
+        fprintf(stderr, "Error: unknown operator\n");
         fflush(stderr);
         fclose(fin);
         fclose(fout);
@@ -269,12 +274,6 @@ int main(int argc, char **argv) {
             else if (fabs(d) < 1e-6 && d != 0.0) fprintf(fout, "%.6e\n", d);
             else fprintf(fout, "%.8f\n", d);
         }
-    } else {
-        fprintf(stderr, "Error: unknown operator\n");
-        fflush(stderr);
-        fclose(fin);
-        fclose(fout);
-        return 1;
     }
 
     freeM(A);
