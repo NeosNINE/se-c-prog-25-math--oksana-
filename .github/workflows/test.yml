@@ -34,15 +34,15 @@ jobs:
           echo "Cloning public-tests-2025..."
           git clone --depth 1 https://github.com/se-c-cpp-prog/public-tests-2025.git
 
-          echo "Downloading testdata tarball..."
+          echo "Downloading testdata tarball from codeload..."
           cd public-tests-2025
           rm -rf testdata
-          curl -sL -o testdata.tar.gz https://api.github.com/repos/se-c-cpp-prog/testdata/tarball/main
           mkdir testdata
+          curl -L -o testdata.tar.gz https://codeload.github.com/se-c-cpp-prog/testdata/tar.gz/main
           tar -xzf testdata.tar.gz --strip-components=1 -C testdata
           rm testdata.tar.gz
-          echo "Contents of testdata/math/input:"
-          ls -R testdata/math/input | head -30
+          echo "Sample files:"
+          ls -R testdata/math/input | head -20
 
       - name: Verify testdata structure
         run: |
