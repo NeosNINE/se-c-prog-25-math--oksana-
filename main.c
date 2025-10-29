@@ -19,7 +19,12 @@ Matrix *create_matrix(int r, int c) {
     if (!m->data) { free(m); return NULL; }
     for (int i = 0; i < r; i++) {
         m->data[i] = calloc(c, sizeof(double));
-        if (!m->data[i]) { for (int k=0;k<i;k++) free(m->data[k]); free(m->data); free(m); return NULL; }
+        if (!m->data[i]) {
+            for (int k = 0; k < i; k++) free(m->data[k]);
+            free(m->data);
+            free(m);
+            return NULL;
+        }
     }
     return m;
 }
@@ -38,7 +43,10 @@ int read_matrix(FILE *f, Matrix **m) {
     if (!tmp) return 1;
     for (int i = 0; i < r; i++)
         for (int j = 0; j < c; j++)
-            if (fscanf(f, "%lf", &tmp->data[i][j]) != 1) { free_matrix(tmp); return 1; }
+            if (fscanf(f, "%lf", &tmp->data[i][j]) != 1) {
+                free_matrix(tmp);
+                return 1;
+            }
     *m = tmp;
     return 0;
 }
@@ -47,7 +55,7 @@ int write_matrix(FILE *f, Matrix *m) {
     fprintf(f, "%d %d\n", m->rows, m->cols);
     for (int i = 0; i < m->rows; i++) {
         for (int j = 0; j < m->cols; j++)
-            fprintf(f, "%.6lf%c", m->data[i][j], j == m->cols-1 ? '\n' : ' ');
+            fprintf(f, "%.6lf%c", m->data[i][j], j == m->cols - 1 ? '\n' : ' ');
     }
     return 0;
 }
@@ -78,10 +86,10 @@ Matrix *mul_matrix(Matrix *a, Matrix *b) {
     if (!r) return NULL;
     for (int i = 0; i < a->rows; i++)
         for (int j = 0; j < b->cols; j++) {
-            long double s = 0.0;
+            double s = 0;
             for (int k = 0; k < a->cols; k++)
-                s += (long double)a->data[i][k] * b->data[k][j];
-            r->data[i][j] = (double)s;
+                s += a->data[i][k] * b->data[k][j];
+            r->data[i][j] = s;
         }
     return r;
 }
@@ -98,12 +106,14 @@ Matrix *copy_matrix(Matrix *m) {
 Matrix *pow_matrix(Matrix *m, int n) {
     if (m->rows != m->cols || n < 0) return NULL;
     Matrix *res = create_matrix(m->rows, m->cols);
-    Matrix *base = copy_matrix(m);
-    if (!res || !base) { free_matrix(res); free_matrix(base); return NULL; }
-
+    if (!res) return NULL;
     for (int i = 0; i < m->rows; i++)
         for (int j = 0; j < m->cols; j++)
             res->data[i][j] = (i == j);
+    if (n == 0) return res;
+
+    Matrix *base = copy_matrix(m);
+    if (!base) { free_matrix(res); return NULL; }
 
     while (n > 0) {
         if (n % 2 == 1) {
@@ -136,16 +146,21 @@ double det_matrix(Matrix *m) {
     }
     for (int i = 0; i < n; i++) {
         int pivot = i;
-        for (int j = i+1; j < n; j++)
+        for (int j = i + 1; j < n; j++)
             if (fabs(a[j][i]) > fabs(a[pivot][i])) pivot = j;
         if (fabs(a[pivot][i]) < 1e-12) { det = 0; goto end; }
-        if (pivot != i) { double *t = a[i]; a[i]=a[pivot]; a[pivot]=t; det = -det; }
+        if (pivot != i) {
+            double *t = a[i];
+            a[i] = a[pivot];
+            a[pivot] = t;
+            det = -det;
+        }
         det *= a[i][i];
-        for (int j = i+1; j < n; j++)
+        for (int j = i + 1; j < n; j++)
             a[i][j] /= a[i][i];
-        for (int k = i+1; k < n; k++)
-            for (int j = i+1; j < n; j++)
-                a[k][j] -= a[k][i]*a[i][j];
+        for (int k = i + 1; k < n; k++)
+            for (int j = i + 1; j < n; j++)
+                a[k][j] -= a[k][i] * a[i][j];
     }
 end:
     for (int i = 0; i < n; i++) free(a[i]);
@@ -154,52 +169,67 @@ end:
 }
 
 int main(int argc, char **argv) {
-    if (argc != 5) return 1;
+    if (argc != 4 && argc != 5) {
+        fprintf(stderr, "Usage: matrix <op> <input1> [input2] <output>\n");
+        return 1;
+    }
+
     char *op = argv[1];
     char *in1 = argv[2];
-    char *in2 = argv[3];
-    char *out = argv[4];
+    char *in2 = NULL;
+    char *out = NULL;
+
+    if (argc == 4) {
+        out = argv[3];
+    } else {
+        in2 = argv[3];
+        out = argv[4];
+    }
 
     FILE *f1 = fopen(in1, "r");
-    if (!f1) return 1;
+    if (!f1) { fprintf(stderr, "Cannot open %s\n", in1); return 1; }
     Matrix *A = NULL, *B = NULL, *R = NULL;
-    if (read_matrix(f1, &A)) { fclose(f1); return 1; }
+    if (read_matrix(f1, &A)) { fprintf(stderr, "Read error in %s\n", in1); fclose(f1); return 1; }
     fclose(f1);
 
     FILE *f2 = NULL;
-    if (strcmp(op, "det") != 0) {
+    if (in2 && strcmp(op, "det") != 0) {
         f2 = fopen(in2, "r");
-        if (!f2) { free_matrix(A); return 1; }
-        if (read_matrix(f2, &B)) { fclose(f2); free_matrix(A); return 1; }
+        if (!f2) { fprintf(stderr, "Cannot open %s\n", in2); free_matrix(A); return 1; }
+        if (read_matrix(f2, &B)) { fprintf(stderr, "Read error in %s\n", in2); fclose(f2); free_matrix(A); return 1; }
         fclose(f2);
     }
 
     FILE *fo = fopen(out, "w");
-    if (!fo) { free_matrix(A); free_matrix(B); return 1; }
+    if (!fo) { fprintf(stderr, "Cannot open %s\n", out); free_matrix(A); free_matrix(B); return 1; }
 
     int ret = 0;
+
     if (strcmp(op, "sum") == 0) {
         R = sum_matrix(A, B);
-        if (!R) ret = 1;
+        if (!R) { fprintf(stderr, "Sum failed\n"); ret = 1; }
         else write_matrix(fo, R);
     } else if (strcmp(op, "sub") == 0) {
         R = sub_matrix(A, B);
-        if (!R) ret = 1;
+        if (!R) { fprintf(stderr, "Sub failed\n"); ret = 1; }
         else write_matrix(fo, R);
     } else if (strcmp(op, "mul") == 0) {
         R = mul_matrix(A, B);
-        if (!R) ret = 1;
+        if (!R) { fprintf(stderr, "Mul failed\n"); ret = 1; }
         else write_matrix(fo, R);
     } else if (strcmp(op, "pow") == 0) {
         int power = (int)strtol(in2, NULL, 10);
         R = pow_matrix(A, power);
-        if (!R) ret = 1;
+        if (!R) { fprintf(stderr, "Pow failed\n"); ret = 1; }
         else write_matrix(fo, R);
     } else if (strcmp(op, "det") == 0) {
         double d = det_matrix(A);
-        if (isnan(d)) ret = 1;
+        if (isnan(d)) { fprintf(stderr, "Det failed\n"); ret = 1; }
         else fprintf(fo, "%.6lf\n", d);
-    } else ret = 1;
+    } else {
+        fprintf(stderr, "Unknown operation\n");
+        ret = 1;
+    }
 
     fclose(fo);
     free_matrix(A);
