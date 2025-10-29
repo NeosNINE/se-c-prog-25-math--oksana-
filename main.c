@@ -163,91 +163,69 @@ static Matrix *powM(const Matrix *A, long long p) {
     }
     freeM(B);
     sanitize(R);
-    int allInf = 1;
+    int allNaN = 1;
     for (int i = 0; i < R->r * R->c; i++)
-        if (!isinf(R->a[i])) { allInf = 0; break; }
-    if (allInf)
+        if (!isnan(R->a[i])) { allNaN = 0; break; }
+    if (allNaN)
         for (int i = 0; i < R->r * R->c; i++)
-            R->a[i] = NAN;
+            R->a[i] = INFINITY;
     return R;
 }
 
-static void ensure_dir(const char *path) {
+static int ensure_dir(const char *path) {
     char buf[512];
     strncpy(buf, path, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
     char *slash = strrchr(buf, '/');
     if (slash) {
         *slash = '\0';
-        mkdir_p(buf);
+        if (mkdir_p(buf) != 0 && errno != EEXIST)
+            return 0; // failed
     }
+    return 1;
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Error: wrong argument count\n");
-        fflush(stderr);
-        return 1;
-    }
+    if (argc != 3) return 1;
 
     FILE *fin = fopen(argv[1], "r");
-    if (!fin) {
-        fprintf(stderr, "Error: cannot open input file\n");
-        fflush(stderr);
+    if (!fin) return 1;
+
+    if (!ensure_dir(argv[2])) {
+        fclose(fin);
         return 1;
     }
 
-    ensure_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
-        fprintf(stderr, "Error: cannot create output file\n");
-        fflush(stderr);
         fclose(fin);
         return 1;
     }
 
     char op;
-    if (fscanf(fin, " %c", &op) != 1) {
-        fprintf(stderr, "Error: cannot read operator\n");
-        fflush(stderr);
-        fclose(fin);
-        fclose(fout);
-        return 1;
-    }
+    if (fscanf(fin, " %c", &op) != 1) { fclose(fin); fclose(fout); return 1; }
 
     if (op != '+' && op != '-' && op != '*' && op != '^' && op != '|') {
-        fprintf(stderr, "Error: unknown operator\n");
-        fflush(stderr);
-        fclose(fin);
-        fclose(fout);
-        return 1;
+        fclose(fin); fclose(fout); return 1;
     }
 
     Matrix *A = readM(fin);
-    if (!A) {
-        fprintf(fout, "no solution\n");
-        fclose(fout);
-        fclose(fin);
-        return 0;
-    }
+    if (!A) { fprintf(fout, "no solution\n"); fclose(fout); fclose(fin); return 0; }
 
     if (op == '+') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? sumM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
         freeM(B);
     } else if (op == '-') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? subM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
         freeM(B);
     } else if (op == '*') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? mulM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
         freeM(B);
     } else if (op == '^') {
         long long p;
