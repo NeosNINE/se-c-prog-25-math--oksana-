@@ -48,10 +48,6 @@ static Matrix *readM(FILE *f) {
 static void sanitize(Matrix *M) {
     for (int i = 0; i < M->r * M->c; i++) {
         double v = M->a[i];
-        if (isnan(v)) {
-            if (fabs(v) > 1e308) M->a[i] = INFINITY;
-            else continue;
-        }
         if (isinf(v) || v > 1e308 || v < -1e308)
             M->a[i] = INFINITY;
     }
@@ -94,7 +90,6 @@ static Matrix *subM(const Matrix *A, const Matrix *B) {
     return R;
 }
 
-/* Blocked multiplication for big cases */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
@@ -179,8 +174,6 @@ static Matrix *powM(const Matrix *A, long long p) {
     }
     freeM(B);
     sanitize(R);
-    for (int i = 0; i < R->r * R->c; i++)
-        if (isnan(R->a[i])) R->a[i] = INFINITY;
     return R;
 }
 
@@ -203,14 +196,14 @@ int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "Error: wrong argument count\n");
         fflush(stderr);
-        _Exit(1);
+        return 1;
     }
 
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
         fflush(stderr);
-        _Exit(1);
+        return 1;
     }
 
     ensure_dir(argv[2]);
@@ -218,14 +211,17 @@ int main(int argc, char **argv) {
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fflush(stderr);
-        _Exit(1);
+        fclose(fin);
+        return 1;
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
         fflush(stderr);
-        _Exit(1);
+        fclose(fin);
+        fclose(fout);
+        return 1;
     }
 
     Matrix *A = readM(fin);
@@ -276,7 +272,9 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: unknown operator\n");
         fflush(stderr);
-        _Exit(1);
+        fclose(fin);
+        fclose(fout);
+        return 1;
     }
 
     freeM(A);
