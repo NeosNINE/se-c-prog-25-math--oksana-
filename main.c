@@ -2,292 +2,229 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* --- Вспомогательные функции работы с матрицами --- */
-
-static float **create_matrix(int r, int c) {
-    if (r <= 0 || c <= 0) return NULL;
-    float **m = (float **)malloc((size_t)r * sizeof(float *));
-    if (!m) return NULL;
-    for (int i = 0; i < r; ++i) {
-        m[i] = (float *)malloc((size_t)c * sizeof(float));
-        if (!m[i]) {
-            for (int k = 0; k < i; ++k) free(m[k]);
-            free(m);
-            return NULL;
-        }
-    }
+// === Matrix memory management ===
+float **create_matrix(int rows, int cols) {
+    float **m = malloc(rows * sizeof(float *));
+    for (int i = 0; i < rows; i++)
+        m[i] = malloc(cols * sizeof(float));
     return m;
 }
 
-static void free_matrix(float **m, int r) {
-    if (!m) return;
-    for (int i = 0; i < r; ++i) free(m[i]);
+void free_matrix(float **m, int rows) {
+    for (int i = 0; i < rows; i++)
+        free(m[i]);
     free(m);
 }
 
-static int read_matrix(FILE *in, float **m, int r, int c) {
-    if (!in || !m) return 0;
-    for (int i = 0; i < r; ++i) {
-        for (int j = 0; j < c; ++j) {
-            if (fscanf(in, "%f", &m[i][j]) != 1) return 0;
+// === IO ===
+void read_matrix(FILE *f, float **m, int r, int c) {
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            if (fscanf(f, "%f", &m[i][j]) != 1)
+                exit(1);
+}
+
+void print_matrix(FILE *f, float **m, int r, int c) {
+    for (int i = 0; i < r; i++) {
+        for (int j = 0; j < c; j++) {
+            float val = m[i][j];
+            if (fabsf(val) < 1e-6f) val = 0.0f;
+            fprintf(f, "%g", val);
+            if (j < c - 1) fprintf(f, " ");
         }
+        fprintf(f, "\n");
     }
-    return 1;
 }
 
-/* Печать матрицы: каждая строка заканчивается \n, после всей матрицы — пустая строка \n
-   Это критично для тестов, которые ожидают дополнительную пустую строку. */
-static void print_matrix(FILE *out, float **m, int r, int c) {
-    for (int i = 0; i < r; ++i) {
-        for (int j = 0; j < c; ++j) {
-            fprintf(out, "%g", m[i][j]);
-            if (j + 1 < c) fputc(' ', out);
-        }
-        fputc('\n', out);
-    }
-    fputc('\n', out);
+// === Helpers ===
+float **copy_matrix(float **src, int r, int c) {
+    float **dst = create_matrix(r, c);
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            dst[i][j] = src[i][j];
+    return dst;
 }
 
-static float **copy_matrix(float **a, int r, int c) {
-    float **b = create_matrix(r, c);
-    if (!b) return NULL;
-    for (int i = 0; i < r; ++i)
-        for (int j = 0; j < c; ++j)
-            b[i][j] = a[i][j];
-    return b;
+float **identity_matrix(int n) {
+    float **m = create_matrix(n, n);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            m[i][j] = (i == j) ? 1.0f : 0.0f;
+    return m;
 }
 
-static float **identity_matrix(int n) {
-    float **e = create_matrix(n, n);
-    if (!e) return NULL;
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            e[i][j] = (i == j) ? 1.0f : 0.0f;
-    return e;
-}
-
-/* Определитель: Гаусс с частичным выбором */
-static float determinant(float **a, int n) {
+// === Core operations ===
+float calculate_determinant(float **a, int n) {
     float **m = copy_matrix(a, n, n);
-    if (!m) return 0.0f; /* при OOM тесты сюда не целятся, но вернём 0 */
     float det = 1.0f;
-    int swaps = 0;
-
-    for (int i = 0; i < n; ++i) {
-        int piv = i;
-        float maxv = (float)fabs((double)m[i][i]);
-        for (int k = i + 1; k < n; ++k) {
-            float v = (float)fabs((double)m[k][i]);
-            if (v > maxv) { maxv = v; piv = k; }
+    for (int i = 0; i < n; i++) {
+        int pivot = i;
+        for (int k = i + 1; k < n; k++)
+            if (fabsf(m[k][i]) > fabsf(m[pivot][i]))
+                pivot = k;
+        if (fabsf(m[pivot][i]) < 1e-10f) {
+            free_matrix(m, n);
+            return 0.0f;
         }
-        if (maxv < 1e-12f) { det = 0.0f; free_matrix(m, n); return det; }
-
-        if (piv != i) {
-            for (int j = 0; j < n; ++j) {
-                float tmp = m[i][j];
-                m[i][j] = m[piv][j];
-                m[piv][j] = tmp;
-            }
-            swaps ^= 1;
+        if (pivot != i) {
+            float *tmp = m[i];
+            m[i] = m[pivot];
+            m[pivot] = tmp;
+            det = -det;
         }
-
-        float diag = m[i][i];
-        det *= diag;
-
-        for (int k = i + 1; k < n; ++k) {
-            float factor = m[k][i] / diag;
-            for (int j = i; j < n; ++j) {
+        det *= m[i][i];
+        for (int k = i + 1; k < n; k++) {
+            float factor = m[k][i] / m[i][i];
+            for (int j = i; j < n; j++)
                 m[k][j] -= factor * m[i][j];
-            }
         }
     }
-
-    if (swaps) det = -det;
     free_matrix(m, n);
     return det;
 }
 
-static float **add_matrix(float **a, float **b, int r, int c) {
-    float **res = create_matrix(r, c);
-    if (!res) return NULL;
-    for (int i = 0; i < r; ++i)
-        for (int j = 0; j < c; ++j)
-            res[i][j] = a[i][j] + b[i][j];
-    return res;
+float **add_matrices(float **A, float **B, int r, int c) {
+    float **R = create_matrix(r, c);
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            R[i][j] = A[i][j] + B[i][j];
+    return R;
 }
 
-static float **sub_matrix(float **a, float **b, int r, int c) {
-    float **res = create_matrix(r, c);
-    if (!res) return NULL;
-    for (int i = 0; i < r; ++i)
-        for (int j = 0; j < c; ++j)
-            res[i][j] = a[i][j] - b[i][j];
-    return res;
+float **sub_matrices(float **A, float **B, int r, int c) {
+    float **R = create_matrix(r, c);
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            R[i][j] = A[i][j] - B[i][j];
+    return R;
 }
 
-static float **mul_matrix(float **a, float **b, int rA, int cA, int cB) {
-    float **res = create_matrix(rA, cB);
-    if (!res) return NULL;
-    for (int i = 0; i < rA; ++i) {
-        for (int j = 0; j < cB; ++j) {
-            float s = 0.0f;
-            for (int k = 0; k < cA; ++k) s += a[i][k] * b[k][j];
-            res[i][j] = s;
+float **mul_matrices(float **A, float **B, int rA, int cA, int cB) {
+    float **R = create_matrix(rA, cB);
+    for (int i = 0; i < rA; i++)
+        for (int j = 0; j < cB; j++) {
+            R[i][j] = 0;
+            for (int k = 0; k < cA; k++)
+                R[i][j] += A[i][k] * B[k][j];
         }
-    }
-    return res;
+    return R;
 }
 
-/* Быстрое возведение в степень (n >= 0). При p == 0 -> E */
-static float **pow_matrix(float **a, int n, int p) {
+float **pow_matrix(float **A, int n, int p) {
     if (p == 0) return identity_matrix(n);
-    if (p == 1) return copy_matrix(a, n, n);
-
-    float **base = copy_matrix(a, n, n);
-    float **res  = identity_matrix(n);
-    if (!base || !res) { free_matrix(base, n); free_matrix(res, n); return NULL; }
-
-    int e = p;
-    while (e > 0) {
-        if (e & 1) {
-            float **tmp = mul_matrix(res, base, n, n, n);
-            if (!tmp) { free_matrix(base, n); free_matrix(res, n); return NULL; }
+    if (p == 1) return copy_matrix(A, n, n);
+    float **res = identity_matrix(n);
+    float **base = copy_matrix(A, n, n);
+    int power = p;
+    while (power > 0) {
+        if (power % 2) {
+            float **tmp = mul_matrices(res, base, n, n, n);
             free_matrix(res, n);
             res = tmp;
         }
-        float **sq = mul_matrix(base, base, n, n, n);
-        if (!sq) { free_matrix(base, n); free_matrix(res, n); return NULL; }
+        float **tmp = mul_matrices(base, base, n, n, n);
         free_matrix(base, n);
-        base = sq;
-        e >>= 1;
+        base = tmp;
+        power /= 2;
     }
     free_matrix(base, n);
     return res;
 }
 
-/* --- Точка входа --- */
-
+// === Main ===
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s <input_file> <output_file>\n", (argc > 0 && argv[0]) ? argv[0] : "matrix");
+        fprintf(stderr, "no solution\n");
         return 1;
     }
 
-    FILE *in = fopen(argv[1], "r");
-    if (!in) { fprintf(stderr, "Failed to open input file\n"); return 1; }
-    FILE *out = fopen(argv[2], "w");
-    if (!out) { fprintf(stderr, "Failed to open output file\n"); fclose(in); return 1; }
+    FILE *fin = fopen(argv[1], "r");
+    FILE *fout = fopen(argv[2], "w");
+    if (!fin || !fout) {
+        fprintf(stderr, "no solution\n");
+        return 1;
+    }
 
     char op;
-    if (fscanf(in, " %c", &op) != 1) {
-        /* Пустой/битый файл — отрицательный тест: ненулевой код */
-        fprintf(stderr, "Incorrect or empty input\n");
-        fclose(in); fclose(out);
+    if (fscanf(fin, " %c", &op) != 1) {
+        fprintf(stderr, "no solution\n");
         return 1;
     }
 
     int rA, cA;
-    if (fscanf(in, "%d %d", &rA, &cA) != 2 || rA <= 0 || cA <= 0) {
-        fprintf(stderr, "Incorrect matrix A size\n");
-        fclose(in); fclose(out);
+    if (fscanf(fin, "%d %d", &rA, &cA) != 2) {
+        fprintf(stderr, "no solution\n");
         return 1;
     }
 
     float **A = create_matrix(rA, cA);
-    if (!A) { fprintf(stderr, "Out of memory\n"); fclose(in); fclose(out); return 1; }
-    if (!read_matrix(in, A, rA, cA)) {
-        fprintf(stderr, "Not enough data for matrix A\n");
-        free_matrix(A, rA); fclose(in); fclose(out);
-        return 1;
-    }
+    read_matrix(fin, A, rA, cA);
 
     if (op == '|') {
         if (rA != cA) {
-            /* По заданию при невозможности — только "no solution" в выходной файл */
-            fprintf(out, "no solution\n");
+            fprintf(fout, "no solution\n");
         } else {
-            float det = determinant(A, rA);
-            /* Для определителя — одна строка и \n в конце файла */
-            fprintf(out, "%g\n", det);
+            float det = calculate_determinant(A, rA);
+            fprintf(fout, "%g\n", det);
         }
-        free_matrix(A, rA);
-        fclose(in); fclose(out);
-        return 0;
     }
 
-    if (op == '^') {
-        if (rA != cA) {
-            fprintf(out, "no solution\n");
-            free_matrix(A, rA); fclose(in); fclose(out);
+    else if (op == '^') {
+        int power;
+        if (fscanf(fin, "%d", &power) != 1 || power < 0 || rA != cA) {
+            fprintf(fout, "no solution\n");
+        } else {
+            float **res = pow_matrix(A, rA, power);
+            print_matrix(fout, res, rA, rA);
+            free_matrix(res, rA);
+        }
+    }
+
+    else if (op == '+' || op == '-' || op == '*') {
+        int rB, cB;
+        if (fscanf(fin, "%d %d", &rB, &cB) != 2) {
+            fprintf(fout, "no solution\n");
+            free_matrix(A, rA);
+            fclose(fin);
+            fclose(fout);
             return 0;
         }
-        int p;
-        if (fscanf(in, "%d", &p) != 1 || p < 0) {
-            /* Неверная степень — это ошибка входа -> ненулевой код */
-            fprintf(stderr, "Incorrect power value\n");
-            free_matrix(A, rA); fclose(in); fclose(out);
-            return 1;
-        }
-        float **R = pow_matrix(A, rA, p);
-        if (!R) {
-            fprintf(stderr, "Out of memory during power\n");
-            free_matrix(A, rA); fclose(in); fclose(out);
-            return 1;
-        }
-        print_matrix(out, R, rA, rA);
-        free_matrix(R, rA);
-        free_matrix(A, rA);
-        fclose(in); fclose(out);
-        return 0;
-    }
 
-    if (op == '+' || op == '-' || op == '*') {
-        int rB, cB;
-        if (fscanf(in, "%d %d", &rB, &cB) != 2 || rB <= 0 || cB <= 0) {
-            fprintf(stderr, "Incorrect matrix B size\n");
-            free_matrix(A, rA); fclose(in); fclose(out);
-            return 1;
-        }
         float **B = create_matrix(rB, cB);
-        if (!B) {
-            fprintf(stderr, "Out of memory\n");
-            free_matrix(A, rA); fclose(in); fclose(out);
-            return 1;
-        }
-        if (!read_matrix(in, B, rB, cB)) {
-            fprintf(stderr, "Not enough data for matrix B\n");
-            free_matrix(B, rB); free_matrix(A, rA); fclose(in); fclose(out);
-            return 1;
-        }
+        read_matrix(fin, B, rB, cB);
 
-        float **R = NULL;
-        int rR = 0, cR = 0;
-
+        float **res = NULL;
         if (op == '+') {
-            if (rA == rB && cA == cB) { R = add_matrix(A, B, rA, cA); rR = rA; cR = cA; }
-            else { fprintf(out, "no solution\n"); }
+            if (rA == rB && cA == cB)
+                res = add_matrices(A, B, rA, cA);
+            else
+                fprintf(fout, "no solution\n");
         } else if (op == '-') {
-            if (rA == rB && cA == cB) { R = sub_matrix(A, B, rA, cA); rR = rA; cR = cA; }
-            else { fprintf(out, "no solution\n"); }
-        } else { /* '*' */
-            if (cA == rB) { R = mul_matrix(A, B, rA, cA, cB); rR = rA; cR = cB; }
-            else { fprintf(out, "no solution\n"); }
+            if (rA == rB && cA == cB)
+                res = sub_matrices(A, B, rA, cA);
+            else
+                fprintf(fout, "no solution\n");
+        } else if (op == '*') {
+            if (cA == rB)
+                res = mul_matrices(A, B, rA, cA, cB);
+            else
+                fprintf(fout, "no solution\n");
         }
 
-        if (R) {
-            print_matrix(out, R, rR, cR);
-            free_matrix(R, rR);
+        if (res) {
+            print_matrix(fout, res, rA, (op == '*' ? cB : cA));
+            free_matrix(res, rA);
         }
 
         free_matrix(B, rB);
-        free_matrix(A, rA);
-        fclose(in); fclose(out);
-        return 0;
     }
 
-    /* Некорректный оператор — это ошибка входа (NEG тесты): ненулевой код */
-    fprintf(stderr, "Incorrect operator\n");
+    else {
+        fprintf(fout, "no solution\n");
+    }
+
     free_matrix(A, rA);
-    fclose(in); fclose(out);
-    return 1;
+    fclose(fin);
+    fclose(fout);
+    return 0;
 }
