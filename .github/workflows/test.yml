@@ -34,15 +34,12 @@ jobs:
           fi
           ls -la
 
-      - name: Clone 2025 test repository and data
+      - name: Clone 2025 test repository with submodules (authenticated)
         run: |
-          echo "Cloning public-tests-2025..."
-          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
+          echo "Cloning public-tests-2025 with submodules..."
+          git clone --recurse-submodules https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
           cd $GITHUB_WORKSPACE/public-tests-2025
-          echo "Resetting testdata directory..."
-          rm -rf testdata
-          echo "Fetching testdata..."
-          git clone https://github.com/se-c-cpp-prog/testdata.git testdata
+          git submodule update --init --recursive
           ls -R testdata || true
 
       - name: Verify test suite files
