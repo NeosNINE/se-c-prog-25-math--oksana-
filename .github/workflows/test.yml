@@ -31,4 +31,10 @@ jobs:
         working-directory: public-tests-2025
         run: |
           echo "Running ITMO official matrix tests..."
-          python3 main.py --program ./matrix --suite math
+          python3 main.py --program ./matrix --suite math | tee ../itmo_test_results.txt
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: itmo-matrix-results
+          path: itmo_test_results.txt
