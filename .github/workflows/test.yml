@@ -23,5 +23,9 @@ jobs:
       - name: Clone ITMO test suite
         run: git clone https://github.com/se-c-cpp-prog/public-tests-2025.git
 
-      - name: Run tests
-        run: python3 public-tests-2025/main.py .
+      - name: Copy project executable into test folder
+        run: cp matrix public-tests-2025/
+
+      - name: Run tests from correct directory
+        working-directory: public-tests-2025
+        run: python3 main.py ..
