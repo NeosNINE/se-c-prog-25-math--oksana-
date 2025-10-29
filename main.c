@@ -244,3 +244,15 @@ int main(int argc, char **argv) {
     fclose(fout);
     return 0;
 }
+   - name: Save test log
+     if: always()
+     run: |
+       mkdir -p results
+       cp public-tests-2025/testdata/math/output/* results/ || true
+     continue-on-error: true
+
+   - name: Upload artifacts
+     uses: actions/upload-artifact@v3
+     with:
+       name: matrix-test-results
+       path: results
