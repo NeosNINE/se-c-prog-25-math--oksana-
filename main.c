@@ -51,7 +51,7 @@ static void sanitize(Matrix *M) {
         double v = M->a[i];
         if (isinf(v) || v > 1e308 || v < -1e308)
             M->a[i] = INFINITY;
-        /* do not touch NaN */
+        /* keep NaN as-is */
     }
 }
 
@@ -62,7 +62,8 @@ static void writeM(FILE *f, const Matrix *M) {
             double v = M->a[i * M->c + j];
             if (isnan(v)) fprintf(f, "nan");
             else if (isinf(v)) fprintf(f, "inf");
-            else fprintf(f, "%.6f", v);
+            else if (fabs(v) < 1e-6 && v != 0.0) fprintf(f, "%.6e", v);
+            else fprintf(f, "%.8f", v);
             if (j + 1 < M->c) fputc(' ', f);
         }
         fputc('\n', f);
@@ -91,17 +92,22 @@ static Matrix *subM(const Matrix *A, const Matrix *B) {
     return R;
 }
 
+/* Blocked multiplication for speed */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
     Matrix *R = allocM(n, p);
     if (!R) return NULL;
-    for (int i = 0; i < n; i++)
-        for (int k = 0; k < m; k++) {
-            double aik = A->a[i * m + k];
-            for (int j = 0; j < p; j++)
-                R->a[i * p + j] += aik * B->a[k * p + j];
-        }
+    int BS = 64;
+    for (int ii = 0; ii < n; ii += BS)
+        for (int kk = 0; kk < m; kk += BS)
+            for (int jj = 0; jj < p; jj += BS)
+                for (int i = ii; i < n && i < ii + BS; i++)
+                    for (int k = kk; k < m && k < kk + BS; k++) {
+                        double aik = A->a[i * m + k];
+                        for (int j = jj; j < p && j < jj + BS; j++)
+                            R->a[i * p + j] += aik * B->a[k * p + j];
+                    }
     sanitize(R);
     return R;
 }
@@ -193,14 +199,14 @@ int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "Error: wrong argument count\n");
         fflush(stderr);
-        _Exit(2);
+        _Exit(1);
     }
 
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
         fflush(stderr);
-        _Exit(2);
+        _Exit(1);
     }
 
     ensure_dir(argv[2]);
@@ -208,14 +214,14 @@ int main(int argc, char **argv) {
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fflush(stderr);
-        _Exit(2);
+        _Exit(1);
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
         fflush(stderr);
-        _Exit(2);
+        _Exit(1);
     }
 
     Matrix *A = readM(fin);
@@ -260,7 +266,8 @@ int main(int argc, char **argv) {
             double d = detM(A);
             if (isnan(d)) fprintf(fout, "nan\n");
             else if (isinf(d)) fprintf(fout, "inf\n");
-            else fprintf(fout, "%.6f\n", d);
+            else if (fabs(d) < 1e-6 && d != 0.0) fprintf(fout, "%.6e\n", d);
+            else fprintf(fout, "%.8f\n", d);
         }
     } else {
         fprintf(stderr, "Error: unknown operator\n");
