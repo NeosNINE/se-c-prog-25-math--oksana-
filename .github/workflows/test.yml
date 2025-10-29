@@ -15,7 +15,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc python3 python3-pip
 
       - name: Build project
-        run: gcc main.c -std=c23 -lm -o matrix
+        run: gcc main.c -std=c2x -lm -o matrix
 
       - name: Clone ITMO test suite
         run: git clone https://github.com/se-c-cpp-prog/public-tests-2025.git
