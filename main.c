@@ -3,13 +3,13 @@
 #include <string.h>
 #include <math.h>
 
-/* ====== Определения матрицы ====== */
+/* ====== Структура матрицы ====== */
 typedef struct {
     int r, c;
     double *a;
 } Matrix;
 
-/* ====== Аллокация ====== */
+/* ====== Память ====== */
 static Matrix* alloc_matrix(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
     Matrix *M = malloc(sizeof(Matrix));
@@ -24,7 +24,7 @@ static void free_matrix(Matrix *M) {
     if (M) { free(M->a); free(M); }
 }
 
-/* ====== Доступ к элементам ====== */
+/* ====== Доступ ====== */
 static inline double get(const Matrix *M, int i, int j) { return M->a[i * M->c + j]; }
 static inline void set(Matrix *M, int i, int j, double v) { M->a[i * M->c + j] = v; }
 
@@ -97,7 +97,7 @@ static double det_matrix(const Matrix *A) {
             double v=fabs(get(M,r,i));
             if(v>mx){mx=v;piv=r;}
         }
-        if(mx==0.0){det=0.0;goto done;}
+        if(mx<1e-15){det=0.0;goto done;}
         if(piv!=i){
             for(int j=0;j<n;j++){
                 double t=get(M,i,j);
@@ -141,9 +141,9 @@ static Matrix* pow_matrix(const Matrix *A,long long p){
     return res;
 }
 
-/* ====== CLI (универсальная логика) ====== */
+/* ====== CLI ====== */
 int main(int argc, char **argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         fprintf(stderr, "Usage: matrix <op> <input1> [input2] <output>\n");
         return 1;
     }
@@ -153,58 +153,74 @@ int main(int argc, char **argv) {
     const char *in2 = NULL;
     const char *out = NULL;
 
-    // формат с указанием операции
+    // если операция указана явно
     if (!strcmp(argv[1], "sum") || !strcmp(argv[1], "sub") || !strcmp(argv[1], "mul") ||
         !strcmp(argv[1], "pow") || !strcmp(argv[1], "det")) {
         op  = argv[1];
         in1 = argv[2];
         if (argc == 5) { in2 = argv[3]; out = argv[4]; }
         else if (argc == 4) { out = argv[3]; }
-        else { fprintf(stderr, "Usage: matrix <op> <input1> [input2] <output>\n"); return 1; }
+        else { fprintf(stderr, "Invalid arguments.\n"); return 1; }
     } else {
-        // формат без операции (для runner ITMO)
+        // без операции (det по умолчанию)
         op  = "det";
-        in1 = argv[1];
-        out = argv[2];
+        if (argc == 3) { in1 = argv[1]; out = argv[2]; }
+        else { fprintf(stderr, "Invalid arguments.\n"); return 1; }
     }
 
     Matrix *A=NULL,*B=NULL,*R=NULL;
     FILE *f1=fopen(in1,"r");
-    if(!f1){fprintf(stderr,"Cannot open %s\n",in1);return 1;}
-    if(read_matrix(f1,&A)){fclose(f1);return 1;}
+    if(!f1){fprintf(stderr,"Error: cannot open input file '%s'\n",in1);return 1;}
+    if(read_matrix(f1,&A)){fclose(f1);fprintf(stderr,"Error: invalid matrix format in '%s'\n",in1);return 1;}
     fclose(f1);
 
-    if (in2) {
+    if (in2 && strcmp(op,"pow")) {
         FILE*f2=fopen(in2,"r");
-        if(!f2){free_matrix(A);return 1;}
-        if(read_matrix(f2,&B)){fclose(f2);free_matrix(A);return 1;}
+        if(!f2){free_matrix(A);fprintf(stderr,"Error: cannot open second input '%s'\n",in2);return 1;}
+        if(read_matrix(f2,&B)){fclose(f2);free_matrix(A);fprintf(stderr,"Error: invalid matrix format in '%s'\n",in2);return 1;}
         fclose(f2);
     }
 
     FILE *fo=fopen(out,"w");
-    if(!fo){free_matrix(A);free_matrix(B);return 1;}
+    if(!fo){fprintf(stderr,"Error: cannot open output file '%s'\n",out);free_matrix(A);free_matrix(B);return 1;}
 
     int rc=0;
     if(!strcmp(op,"sum")){
         R=sum_matrix(A,B);
-        if(!R)rc=1; else write_matrix(fo,R);
+        if(!R){fprintf(stderr,"Error: invalid matrix sizes for sum.\n");rc=1;}
+        else write_matrix(fo,R);
     }
     else if(!strcmp(op,"sub")){
         R=sub_matrix(A,B);
-        if(!R)rc=1; else write_matrix(fo,R);
+        if(!R){fprintf(stderr,"Error: invalid matrix sizes for sub.\n");rc=1;}
+        else write_matrix(fo,R);
     }
     else if(!strcmp(op,"mul")){
         R=mul_matrix(A,B);
-        if(!R)rc=1; else write_matrix(fo,R);
+        if(!R){fprintf(stderr,"Error: invalid matrix sizes for mul.\n");rc=1;}
+        else write_matrix(fo,R);
     }
     else if(!strcmp(op,"pow")){
-        FILE *pf=fopen(in2,"r"); long long p;
-        if(!pf||fscanf(pf,"%lld",&p)!=1){rc=1;}
-        else {fclose(pf);R=pow_matrix(A,p);if(!R)rc=1;else write_matrix(fo,R);}
+        FILE *pf=fopen(in2,"r");
+        long long p=0;
+        if(!pf||fscanf(pf,"%lld",&p)!=1){
+            fprintf(stderr,"Error: cannot read power value.\n");
+            rc=1;
+        } else {
+            fclose(pf);
+            R=pow_matrix(A,p);
+            if(!R){fprintf(stderr,"Error: invalid power operation.\n");rc=1;}
+            else write_matrix(fo,R);
+        }
     }
-    else { // det по умолчанию
+    else if(!strcmp(op,"det")){
         double d=det_matrix(A);
-        if(isnan(d)) rc=1; else fprintf(fo,"%.6f\n",d);
+        if(isnan(d)){fprintf(stderr,"Error: invalid determinant operation.\n");rc=1;}
+        else fprintf(fo,"%.6f\n",d);
+    }
+    else {
+        fprintf(stderr,"Error: unknown operation '%s'\n",op);
+        rc=1;
     }
 
     fclose(fo);
