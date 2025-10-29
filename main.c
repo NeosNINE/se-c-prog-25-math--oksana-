@@ -52,23 +52,26 @@ static void writeM(FILE *f, const Matrix *M) {
     }
 }
 
-/* cache-friendly matrix multiplication */
+/* High-performance blocked matrix multiplication */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
     Matrix *R = allocM(n, p);
     if (!R) return NULL;
 
-    int block = 32;
+    int block = 64;
     for (int i0 = 0; i0 < n; i0 += block)
         for (int k0 = 0; k0 < m; k0 += block)
             for (int j0 = 0; j0 < p; j0 += block)
-                for (int i = i0; i < n && i < i0 + block; i++)
+                for (int i = i0; i < n && i < i0 + block; i++) {
+                    double *rrow = &R->a[i * p];
                     for (int k = k0; k < m && k < k0 + block; k++) {
                         double aik = A->a[i * m + k];
+                        const double *brow = &B->a[k * p];
                         for (int j = j0; j < p && j < j0 + block; j++)
-                            R->a[i * p + j] += aik * B->a[k * p + j];
+                            rrow[j] += aik * brow[j];
                     }
+                }
     return R;
 }
 
@@ -168,21 +171,21 @@ int main(int argc, char **argv) {
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
-        return 1;
+        return 1;   // NEG #2
     }
     ensure_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fclose(fin);
-        return 1;
+        return 1;   // NEG #3
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
         fclose(fin); fclose(fout);
-        return 1;
+        return 1;   // NEG #0
     }
 
     Matrix *A = readM(fin);
@@ -222,8 +225,10 @@ int main(int argc, char **argv) {
     }
     else {
         fprintf(stderr, "Error: unknown operator\n");
-        freeM(A); fclose(fin); fclose(fout);
-        return 1;           /* NEG #1 trigger */
+        freeM(A);
+        fclose(fin);
+        fclose(fout);
+        return 1;   // NEG #1
     }
 
     freeM(A);
