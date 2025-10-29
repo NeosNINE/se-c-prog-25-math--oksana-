@@ -34,6 +34,7 @@ void print_matrix(FILE *f, float **m, int r, int c) {
         }
         fprintf(f, "\n");
     }
+    fprintf(f, "\n"); // ОБЯЗАТЕЛЬНАЯ пустая строка для всех тестов ITMO
 }
 
 // === Helpers ===
@@ -115,9 +116,8 @@ float **pow_matrix(float **A, int n, int p) {
     if (p == 1) return copy_matrix(A, n, n);
     float **res = identity_matrix(n);
     float **base = copy_matrix(A, n, n);
-    int power = p;
-    while (power > 0) {
-        if (power % 2) {
+    while (p > 0) {
+        if (p % 2) {
             float **tmp = mul_matrices(res, base, n, n, n);
             free_matrix(res, n);
             res = tmp;
@@ -125,7 +125,7 @@ float **pow_matrix(float **A, int n, int p) {
         float **tmp = mul_matrices(base, base, n, n, n);
         free_matrix(base, n);
         base = tmp;
-        power /= 2;
+        p /= 2;
     }
     free_matrix(base, n);
     return res;
@@ -147,78 +147,67 @@ int main(int argc, char *argv[]) {
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
-        fprintf(stderr, "no solution\n");
-        return 1;
+        fprintf(fout, "no solution\n");
+        fclose(fin); fclose(fout);
+        return 0;
     }
 
     int rA, cA;
     if (fscanf(fin, "%d %d", &rA, &cA) != 2) {
-        fprintf(stderr, "no solution\n");
-        return 1;
+        fprintf(fout, "no solution\n");
+        fclose(fin); fclose(fout);
+        return 0;
     }
 
     float **A = create_matrix(rA, cA);
     read_matrix(fin, A, rA, cA);
 
     if (op == '|') {
-        if (rA != cA) {
-            fprintf(fout, "no solution\n");
-        } else {
-            float det = calculate_determinant(A, rA);
-            fprintf(fout, "%g\n", det);
-        }
+        if (rA != cA) fprintf(fout, "no solution\n");
+        else fprintf(fout, "%g\n", calculate_determinant(A, rA));
     }
-
     else if (op == '^') {
         int power;
-        if (fscanf(fin, "%d", &power) != 1 || power < 0 || rA != cA) {
+        if (fscanf(fin, "%d", &power) != 1 || power < 0 || rA != cA)
             fprintf(fout, "no solution\n");
-        } else {
-            float **res = pow_matrix(A, rA, power);
-            print_matrix(fout, res, rA, rA);
-            free_matrix(res, rA);
+        else {
+            float **R = pow_matrix(A, rA, power);
+            print_matrix(fout, R, rA, rA);
+            free_matrix(R, rA);
         }
     }
-
     else if (op == '+' || op == '-' || op == '*') {
         int rB, cB;
         if (fscanf(fin, "%d %d", &rB, &cB) != 2) {
             fprintf(fout, "no solution\n");
             free_matrix(A, rA);
-            fclose(fin);
-            fclose(fout);
+            fclose(fin); fclose(fout);
             return 0;
         }
-
         float **B = create_matrix(rB, cB);
         read_matrix(fin, B, rB, cB);
 
-        float **res = NULL;
+        float **R = NULL;
         if (op == '+') {
-            if (rA == rB && cA == cB)
-                res = add_matrices(A, B, rA, cA);
-            else
-                fprintf(fout, "no solution\n");
-        } else if (op == '-') {
-            if (rA == rB && cA == cB)
-                res = sub_matrices(A, B, rA, cA);
-            else
-                fprintf(fout, "no solution\n");
-        } else if (op == '*') {
-            if (cA == rB)
-                res = mul_matrices(A, B, rA, cA, cB);
-            else
-                fprintf(fout, "no solution\n");
+            if (rA == rB && cA == cB) R = add_matrices(A, B, rA, cA);
+            else fprintf(fout, "no solution\n");
+        }
+        else if (op == '-') {
+            if (rA == rB && cA == cB) R = sub_matrices(A, B, rA, cA);
+            else fprintf(fout, "no solution\n");
+        }
+        else if (op == '*') {
+            if (cA == rB) R = mul_matrices(A, B, rA, cA, cB);
+            else fprintf(fout, "no solution\n");
         }
 
-        if (res) {
-            print_matrix(fout, res, rA, (op == '*' ? cB : cA));
-            free_matrix(res, rA);
+        if (R) {
+            int out_c = (op == '*') ? cB : cA;
+            print_matrix(fout, R, rA, out_c);
+            free_matrix(R, rA);
         }
-
         free_matrix(B, rB);
     }
-
     else {
         fprintf(fout, "no solution\n");
     }
