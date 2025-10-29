@@ -1,4 +1,4 @@
-﻿name: ITMO Matrix Autograding
+﻿name: ITMO Matrix Autograding 2025
 
 on:
   push:
@@ -15,25 +15,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up C compiler
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc
+          sudo apt-get install -y gcc python3 git
 
-      - name: Build project
+      - name: Build matrix calculator
         run: |
           gcc main.c -std=c23 -lm -o matrix
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Clone ITMO test suite
+      - name: Clone 2025 public tests
         run: |
-          git clone https://github.com/se-c-cpp-prog/itmo-tests.git
+          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git
 
-      - name: Run ITMO matrix tests
+      - name: Run 2025 test suite
         run: |
-          cd itmo-tests
-          python3 main.py --program ../matrix --suite math
+          python3 public-tests-2025/main.py --program ./matrix --suite math
