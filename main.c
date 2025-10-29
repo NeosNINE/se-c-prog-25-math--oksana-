@@ -4,15 +4,6 @@
 #include <math.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#define mkdir_p(p) _mkdir(p)
-#else
-#include <sys/stat.h>
-#include <sys/types.h>
-#define mkdir_p(p) mkdir(p, 0777)
-#endif
-
 typedef struct {
     int r, c;
     double *a;
@@ -20,10 +11,10 @@ typedef struct {
 
 static Matrix *allocM(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
-    Matrix *M = malloc(sizeof(Matrix));
+    Matrix *M = (Matrix*)malloc(sizeof(Matrix));
     if (!M) return NULL;
     M->r = r; M->c = c;
-    M->a = calloc((size_t)r * c, sizeof(double));
+    M->a = (double*)calloc((size_t)r * c, sizeof(double));
     if (!M->a) { free(M); return NULL; }
     return M;
 }
@@ -35,13 +26,15 @@ static Matrix *readM(FILE *f) {
     if (fscanf(f, "%d%d", &r, &c) != 2) return NULL;
     Matrix *M = allocM(r, c);
     if (!M) return NULL;
-    for (int i = 0; i < r * c; i++)
+    for (int i = 0; i < r * c; i++) {
         if (fscanf(f, "%lf", &M->a[i]) != 1) { freeM(M); return NULL; }
+    }
     return M;
 }
 
 static void sanitize(Matrix *M) {
-    for (int i = 0; i < M->r * M->c; i++) {
+    int n = M->r * M->c;
+    for (int i = 0; i < n; i++) {
         double v = M->a[i];
         if (isinf(v) || v > 1e308 || v < -1e308) M->a[i] = INFINITY;
     }
@@ -164,88 +157,87 @@ static Matrix *powM(const Matrix *A, long long p) {
     }
     freeM(B);
     sanitize(R);
-    int allNaN = 1;
-    for (int i = 0; i < R->r * R->c; i++)
-        if (!isnan(R->a[i])) { allNaN = 0; break; }
-    if (allNaN)
-        for (int i = 0; i < R->r * R->c; i++)
-            R->a[i] = INFINITY;
     return R;
 }
 
-static int ensure_dir(const char *path) {
-    char buf[512];
-    strncpy(buf, path, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-    char *slash = strrchr(buf, '/');
-    if (slash) {
-        *slash = '\0';
-        if (mkdir_p(buf) != 0 && errno != EEXIST)
-            return 0; // failed
-    }
-    return 1;
+static void print_usage_err(void) {
+    fprintf(stderr, "error: usage: <input.txt> <output.txt>\n");
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) return 1;
+    if (argc != 3) { print_usage_err(); return 1; }
 
-    FILE *fin = fopen(argv[1], "r");
-    if (!fin) return 1;
+    const char *in_path = argv[1];
+    const char *out_path = argv[2];
 
-    if (!ensure_dir(argv[2])) {
-        fclose(fin);
+    FILE *fin = fopen(in_path, "r");
+    if (!fin) {
+        fprintf(stderr, "error: cannot open input file '%s': %s\n", in_path, strerror(errno));
         return 1;
     }
 
-    FILE *fout = fopen(argv[2], "w");
+    FILE *fout = fopen(out_path, "w");
     if (!fout) {
+        fprintf(stderr, "error: cannot open output file '%s': %s\n", out_path, strerror(errno));
         fclose(fin);
         return 1;
     }
 
     char op;
-    if (fscanf(fin, " %c", &op) != 1) { fclose(fin); fclose(fout); return 1; }
+    if (fscanf(fin, " %c", &op) != 1) {
+        fprintf(stderr, "error: empty or malformed input\n");
+        fclose(fin); fclose(fout);
+        return 1;
+    }
 
     if (op != '+' && op != '-' && op != '*' && op != '^' && op != '|') {
-        fclose(fin); fclose(fout); return 1;
+        fprintf(stderr, "error: invalid operator '%c'\n", op);
+        fclose(fin); fclose(fout);
+        return 1;
     }
 
     Matrix *A = readM(fin);
-    if (!A) { fprintf(fout, "no solution\n"); fclose(fout); fclose(fin); return 0; }
+    if (!A) {
+        // Норматив для позитивных тестов: писать "no solution" в stdout в случае отсутствия первой матрицы – спорно,
+        // но NEG#0/1 требуют сообщения об ошибке в stderr и ненулевого кода.
+        fprintf(stderr, "error: cannot read first matrix\n");
+        fclose(fin); fclose(fout);
+        return 1;
+    }
 
     if (op == '+') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? sumM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(stdout, "no solution\n"); else { writeM(stdout, R); freeM(R); }
         freeM(B);
     } else if (op == '-') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? subM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(stdout, "no solution\n"); else { writeM(stdout, R); freeM(R); }
         freeM(B);
     } else if (op == '*') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? mulM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        if (!R) fprintf(stdout, "no solution\n"); else { writeM(stdout, R); freeM(R); }
         freeM(B);
     } else if (op == '^') {
         long long p;
-        if (fscanf(fin, "%lld", &p) != 1)
-            fprintf(fout, "no solution\n");
-        else {
+        if (fscanf(fin, "%lld", &p) != 1) {
+            fprintf(stdout, "no solution\n");
+        } else {
             Matrix *R = powM(A, p);
-            if (!R) fprintf(fout, "no solution\n");
-            else { writeM(fout, R); freeM(R); }
+            if (!R) fprintf(stdout, "no solution\n");
+            else { writeM(stdout, R); freeM(R); }
         }
     } else if (op == '|') {
-        if (A->r != A->c)
-            fprintf(fout, "no solution\n");
-        else {
+        if (A->r != A->c) {
+            fprintf(stdout, "no solution\n");
+        } else {
             double d = detM(A);
-            if (isnan(d)) fprintf(fout, "nan\n");
-            else if (isinf(d)) fprintf(fout, "inf\n");
-            else if (fabs(d) < 1e-6 && d != 0.0) fprintf(fout, "%.6e\n", d);
-            else fprintf(fout, "%.8f\n", d);
+            if (isnan(d)) fprintf(stdout, "nan\n");
+            else if (isinf(d)) fprintf(stdout, "inf\n");
+            else if (fabs(d) < 1e-6 && d != 0.0) fprintf(stdout, "%.6e\n", d);
+            else fprintf(stdout, "%.8f\n", d);
         }
     }
 
