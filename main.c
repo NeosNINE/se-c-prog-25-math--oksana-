@@ -9,12 +9,16 @@ typedef struct {
 } Matrix;
 
 static Matrix *allocM(int r, int c) {
-    if (r <= 0 || c <= 0) return NULL;
+    if (r < 0 || c < 0) return NULL;
     Matrix *M = malloc(sizeof(Matrix));
     if (!M) return NULL;
     M->r = r; M->c = c;
-    M->a = calloc((size_t)r * c, sizeof(double));
-    if (!M->a) { free(M); return NULL; }
+    if (r == 0 || c == 0) {
+        M->a = NULL;
+    } else {
+        M->a = calloc((size_t)r * c, sizeof(double));
+        if (!M->a) { free(M); return NULL; }
+    }
     return M;
 }
 
@@ -31,6 +35,7 @@ static Matrix *readM(FILE *f) {
 }
 
 static void writeM(FILE *f, const Matrix *M) {
+    fprintf(f, "%d %d\n", M->r, M->c);
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
             fprintf(f, "%g", M->a[i * M->c + j]);
@@ -70,6 +75,7 @@ static Matrix *mulM(const Matrix *A, const Matrix *B) {
 static double detM(const Matrix *A) {
     if (!A || A->r != A->c) return NAN;
     int n = A->r;
+    if (n == 0) return 1.0;
     Matrix *M = allocM(n, n);
     if (!M) return NAN;
     memcpy(M->a, A->a, sizeof(double) * n * n);
@@ -78,7 +84,7 @@ static double detM(const Matrix *A) {
         int piv = i;
         for (int r = i; r < n; r++)
             if (fabs(M->a[r * n + i]) > fabs(M->a[piv * n + i])) piv = r;
-        if (fabs(M->a[piv * n + i]) < 1e-12) { det = 0.0; freeM(M); return det; }
+        if (fabs(M->a[piv * n + i]) < 1e-12) { freeM(M); return 0.0; }
         if (piv != i) {
             for (int j = 0; j < n; j++) {
                 double t = M->a[i * n + j];
@@ -101,12 +107,15 @@ static double detM(const Matrix *A) {
 static Matrix *identity(int n) {
     Matrix *I = allocM(n, n);
     if (!I) return NULL;
-    for (int i = 0; i < n; i++) I->a[i * n + i] = 1.0;
+    if (n > 0) {
+        for (int i = 0; i < n; i++) I->a[i * n + i] = 1.0;
+    }
     return I;
 }
 
 static Matrix *powM(const Matrix *A, long long p) {
     if (!A || A->r != A->c || p < 0) return NULL;
+    if (p == 0) return identity(A->r);
     Matrix *R = identity(A->r);
     if (!R) return NULL;
     Matrix *B = allocM(A->r, A->c);
@@ -158,37 +167,40 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    int is_matrix_op = (op == '+' || op == '-' || op == '*' || op == '^');
     Matrix *A = readM(fin);
     if (!A) {
+        if (op == '|') {
+            fprintf(fout, "no solution\n");
+        } else {
+            fprintf(fout, "0 0\nno solution\n");
+        }
         fclose(fin);
         fclose(fout);
-        fprintf(stderr, "Error: invalid first matrix\n");
-        return 1;
+        return 0;
     }
 
     if (op == '+' || op == '-' || op == '*') {
         Matrix *B = readM(fin);
         if (!B) {
             freeM(A);
+            fprintf(fout, "0 0\nno solution\n");
             fclose(fin);
             fclose(fout);
-            fprintf(stderr, "Error: invalid second matrix\n");
-            return 1;
+            return 0;
         }
         Matrix *R = NULL;
         if (op == '+') R = sumM(A, B);
         else if (op == '-') R = subM(A, B);
-        else /* op == '*' */ R = mulM(A, B);
+        else R = mulM(A, B);
         freeM(A);
         freeM(B);
         if (!R) {
-            fclose(fin);
-            fclose(fout);
-            fprintf(stderr, "Error: operation failed\n");
-            return 1;
+            fprintf(fout, "0 0\nno solution\n");
+        } else {
+            writeM(fout, R);
+            freeM(R);
         }
-        writeM(fout, R);
-        freeM(R);
         fclose(fin);
         fclose(fout);
         return 0;
@@ -196,21 +208,19 @@ int main(int argc, char **argv) {
         long long p;
         if (fscanf(fin, "%lld", &p) != 1) {
             freeM(A);
+            fprintf(fout, "0 0\nno solution\n");
             fclose(fin);
             fclose(fout);
-            fprintf(stderr, "Error: invalid power\n");
-            return 1;
+            return 0;
         }
         Matrix *R = powM(A, p);
         freeM(A);
         if (!R) {
-            fclose(fin);
-            fclose(fout);
-            fprintf(stderr, "Error: power failed\n");
-            return 1;
+            fprintf(fout, "0 0\nno solution\n");
+        } else {
+            writeM(fout, R);
+            freeM(R);
         }
-        writeM(fout, R);
-        freeM(R);
         fclose(fin);
         fclose(fout);
         return 0;
@@ -218,7 +228,11 @@ int main(int argc, char **argv) {
         double d = detM(A);
         freeM(A);
         fclose(fin);
-        fprintf(fout, "%g\n", d);
+        if (isnan(d)) {
+            fprintf(fout, "no solution\n");
+        } else {
+            fprintf(fout, "%g\n", d);
+        }
         fclose(fout);
         return 0;
     } else {
