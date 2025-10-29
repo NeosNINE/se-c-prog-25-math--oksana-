@@ -2,14 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <ctype.h>
 
-/* ====== структура матрицы ====== */
+/* ===== структура ===== */
 typedef struct {
     int r, c;
     double *a;
 } Matrix;
 
-/* ====== аллокация ====== */
+/* ===== память ===== */
 static Matrix* alloc_matrix(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
     Matrix *M = malloc(sizeof(Matrix));
@@ -21,68 +22,65 @@ static Matrix* alloc_matrix(int r, int c) {
 }
 static void free_matrix(Matrix *M) { if (M) { free(M->a); free(M); } }
 
-/* ====== чтение матрицы ====== */
+/* ===== чтение матрицы ===== */
 static int read_matrix(FILE *f, Matrix **out) {
     if (!f) return -1;
-    long pos = ftell(f);
-    int r, c;
-    if (fscanf(f, "%d%d", &r, &c) == 2) {
-        Matrix *M = alloc_matrix(r, c);
-        if (!M) return -2;
-        for (int i=0;i<r;i++)
-            for (int j=0;j<c;j++)
-                if (fscanf(f, "%lf", &M->a[i*c+j]) != 1) { free_matrix(M); return -3; }
-        *out = M;
-        return 0;
-    }
-    fseek(f, pos, SEEK_SET);
-    double tmp[4096];
-    int n=0, cols=0, rows=0;
-    char line[4096];
-    while (fgets(line,sizeof(line),f)) {
-        char *p=line; int cnt=0; double v;
-        while (sscanf(p,"%lf",&v)==1) {
-            tmp[n++]=v; cnt++;
-            while (*p && *p!=' ' && *p!='\t' && *p!='\n') p++;
-            while (*p==' ' || *p=='\t') p++;
+    char buf[8192];
+    double *vals = NULL;
+    int rows = 0, cols = 0, capacity = 0;
+    while (fgets(buf, sizeof(buf), f)) {
+        char *p = buf;
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '\0' || *p == '\n') continue; // пустая строка
+        double temp[1024]; int cnt = 0;
+        while (sscanf(p, "%lf", &temp[cnt]) == 1) {
+            cnt++;
+            while (*p && !isspace((unsigned char)*p)) p++;
+            while (isspace((unsigned char)*p)) p++;
         }
-        if (cnt>0) {
-            if (cols==0) cols=cnt;
-            else if (cnt!=cols) return -4;
-            rows++;
+        if (cnt == 0) continue;
+        if (cols == 0) cols = cnt;
+        else if (cnt != cols) { free(vals); return -2; }
+        if (rows * cols + cnt > capacity) {
+            capacity = (capacity == 0 ? 1024 : capacity * 2);
+            vals = realloc(vals, capacity * sizeof(double));
         }
+        memcpy(vals + rows * cols, temp, cnt * sizeof(double));
+        rows++;
     }
-    if (rows==0||cols==0) return -5;
-    Matrix *M=alloc_matrix(rows,cols);
-    memcpy(M->a,tmp,sizeof(double)*rows*cols);
-    *out=M;
+    if (rows == 0 || cols == 0) { free(vals); return -3; }
+    Matrix *M = alloc_matrix(rows, cols);
+    if (!M) { free(vals); return -4; }
+    memcpy(M->a, vals, rows * cols * sizeof(double));
+    free(vals);
+    *out = M;
     return 0;
 }
 
-/* ====== запись матрицы ====== */
+/* ===== запись ===== */
 static void write_matrix(FILE *f, const Matrix *M) {
     fprintf(f, "%d %d\n", M->r, M->c);
-    for (int i=0;i<M->r;i++) {
-        for (int j=0;j<M->c;j++)
+    for (int i = 0; i < M->r; i++) {
+        for (int j = 0; j < M->c; j++)
             fprintf(f, "%.6f%s", M->a[i*M->c+j], j+1==M->c?"":" ");
-        fputc('\n',f);
+        fputc('\n', f);
     }
 }
 
-/* ====== операции ====== */
-static Matrix* sum_matrix(const Matrix *A,const Matrix *B){
+/* ===== операции ===== */
+static Matrix* sum_matrix(const Matrix*A,const Matrix*B){
     if(!A||!B||A->r!=B->r||A->c!=B->c) return NULL;
     Matrix*R=alloc_matrix(A->r,A->c);
-    for(int i=0;i<A->r*A->c;i++)R->a[i]=A->a[i]+B->a[i];
+    for(int i=0;i<A->r*A->c;i++) R->a[i]=A->a[i]+B->a[i];
     return R;
 }
-static Matrix* sub_matrix(const Matrix *A,const Matrix *B){
+static Matrix* sub_matrix(const Matrix*A,const Matrix*B){
     if(!A||!B||A->r!=B->r||A->c!=B->c) return NULL;
     Matrix*R=alloc_matrix(A->r,A->c);
-    for(int i=0;i<A->r*A->c;i++)R->a[i]=A->a[i]-B->a[i];
+    for(int i=0;i<A->r*A->c;i++) R->a[i]=A->a[i]-B->a[i];
     return R;
 }
-static Matrix* mul_matrix(const Matrix *A,const Matrix *B){
+static Matrix* mul_matrix(const Matrix*A,const Matrix*B){
     if(!A||!B||A->c!=B->r) return NULL;
     Matrix*R=alloc_matrix(A->r,B->c);
     for(int i=0;i<A->r;i++)
@@ -93,10 +91,10 @@ static Matrix* mul_matrix(const Matrix *A,const Matrix *B){
 }
 static Matrix* identity(int n){
     Matrix*I=alloc_matrix(n,n);
-    for(int i=0;i<n;i++)I->a[i*n+i]=1.0;
+    for(int i=0;i<n;i++) I->a[i*n+i]=1.0;
     return I;
 }
-static double det_matrix(const Matrix *A){
+static double det_matrix(const Matrix*A){
     if(!A||A->r!=A->c) return NAN;
     int n=A->r; Matrix*M=alloc_matrix(n,n);
     memcpy(M->a,A->a,sizeof(double)*n*n);
@@ -142,7 +140,7 @@ static Matrix* pow_matrix(const Matrix*A,long long p){
     return res;
 }
 
-/* ====== CLI ====== */
+/* ===== CLI ===== */
 int main(int argc,char**argv){
     if(argc<2){fprintf(stderr,"Usage: matrix <op> <input1> [input2] <output>\n");return 1;}
     const char*op=NULL;const char*in1=NULL;const char*in2=NULL;const char*out=NULL;
