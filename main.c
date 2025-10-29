@@ -184,20 +184,28 @@ static void ensure_output_dir(const char *path) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) return 1;
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <input> <output>\n", argv[0]);
+        return 1;
+    }
 
     FILE *fin = fopen(argv[1], "r");
-    if (!fin) return 1;
+    if (!fin) {
+        fprintf(stderr, "Error: cannot open input file %s\n", argv[1]);
+        return 1;
+    }
 
     ensure_output_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
+        fprintf(stderr, "Error: cannot create output file %s\n", argv[2]);
         fclose(fin);
         return 1;
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
+        fprintf(stderr, "Error: cannot read operator\n");
         fclose(fin);
         fclose(fout);
         return 1;
@@ -213,7 +221,6 @@ int main(int argc, char **argv) {
 
     if (op == '+' || op == '-' || op == '*') {
         Matrix *B = readM(fin);
-        Matrix *R = NULL;
         if (!B) {
             fprintf(fout, "no solution\n");
             freeM(A);
@@ -221,6 +228,7 @@ int main(int argc, char **argv) {
             fclose(fout);
             return 0;
         }
+        Matrix *R = NULL;
         if (op == '+') R = sumM(A, B);
         else if (op == '-') R = subM(A, B);
         else R = mulM(A, B);
@@ -259,6 +267,7 @@ int main(int argc, char **argv) {
         else
             fprintf(fout, "%g\n", d);
     } else {
+        fprintf(stderr, "Error: unknown operator '%c'\n", op);
         freeM(A);
         fclose(fin);
         fclose(fout);
