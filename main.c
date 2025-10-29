@@ -5,11 +5,11 @@
 
 #ifdef _WIN32
 #include <direct.h>
-#define mkdir_p(path) _mkdir(path)
+#define mkdir_p(p) _mkdir(p)
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
-#define mkdir_p(path) mkdir(path, 0777)
+#define mkdir_p(p) mkdir(p, 0777)
 #endif
 
 typedef struct {
@@ -18,13 +18,12 @@ typedef struct {
 } Matrix;
 
 static Matrix *allocM(int r, int c) {
-    if (r < 0 || c < 0) return NULL;
+    if (r <= 0 || c <= 0) return NULL;
     Matrix *M = malloc(sizeof(Matrix));
     if (!M) return NULL;
-    M->r = r;
-    M->c = c;
-    M->a = (r && c) ? calloc((size_t)r * c, sizeof(double)) : NULL;
-    if (r && c && !M->a) { free(M); return NULL; }
+    M->r = r; M->c = c;
+    M->a = calloc((size_t)r * c, sizeof(double));
+    if (!M->a) { free(M); return NULL; }
     return M;
 }
 
@@ -47,10 +46,30 @@ static void writeM(FILE *f, const Matrix *M) {
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
             fprintf(f, "%g", M->a[i * M->c + j]);
-            if (j < M->c - 1) fprintf(f, " ");
+            if (j + 1 < M->c) fputc(' ', f);
         }
         fputc('\n', f);
     }
+}
+
+/* cache-friendly matrix multiplication */
+static Matrix *mulM(const Matrix *A, const Matrix *B) {
+    if (!A || !B || A->c != B->r) return NULL;
+    int n = A->r, m = A->c, p = B->c;
+    Matrix *R = allocM(n, p);
+    if (!R) return NULL;
+
+    int block = 32;
+    for (int i0 = 0; i0 < n; i0 += block)
+        for (int k0 = 0; k0 < m; k0 += block)
+            for (int j0 = 0; j0 < p; j0 += block)
+                for (int i = i0; i < n && i < i0 + block; i++)
+                    for (int k = k0; k < m && k < k0 + block; k++) {
+                        double aik = A->a[i * m + k];
+                        for (int j = j0; j < p && j < j0 + block; j++)
+                            R->a[i * p + j] += aik * B->a[k * p + j];
+                    }
+    return R;
 }
 
 static Matrix *sumM(const Matrix *A, const Matrix *B) {
@@ -66,17 +85,6 @@ static Matrix *subM(const Matrix *A, const Matrix *B) {
     Matrix *R = allocM(A->r, A->c);
     if (!R) return NULL;
     for (int i = 0; i < A->r * A->c; i++) R->a[i] = A->a[i] - B->a[i];
-    return R;
-}
-
-static Matrix *mulM(const Matrix *A, const Matrix *B) {
-    if (!A || !B || A->c != B->r) return NULL;
-    Matrix *R = allocM(A->r, B->c);
-    if (!R) return NULL;
-    for (int i = 0; i < A->r; i++)
-        for (int k = 0; k < A->c; k++)
-            for (int j = 0; j < B->c; j++)
-                R->a[i * R->c + j] += A->a[i * A->c + k] * B->a[k * B->c + j];
     return R;
 }
 
@@ -105,7 +113,8 @@ static double detM(const Matrix *A) {
         double div = M->a[i * n + i];
         for (int r = i + 1; r < n; r++) {
             double f = M->a[r * n + i] / div;
-            for (int j = i; j < n; j++) M->a[r * n + j] -= f * M->a[i * n + j];
+            for (int j = i; j < n; j++)
+                M->a[r * n + j] -= f * M->a[i * n + j];
         }
     }
     freeM(M);
@@ -123,22 +132,19 @@ static Matrix *powM(const Matrix *A, long long p) {
     if (!A || A->r != A->c || p < 0) return NULL;
     if (p == 0) return identity(A->r);
     Matrix *R = identity(A->r);
-    if (!R) return NULL;
     Matrix *B = allocM(A->r, A->c);
-    if (!B) { freeM(R); return NULL; }
+    if (!R || !B) { freeM(R); freeM(B); return NULL; }
     memcpy(B->a, A->a, sizeof(double) * A->r * A->c);
     while (p > 0) {
         if (p & 1) {
-            Matrix *t = mulM(R, B);
-            freeM(R);
-            R = t;
+            Matrix *tmp = mulM(R, B);
+            freeM(R); R = tmp;
             if (!R) { freeM(B); return NULL; }
         }
         p >>= 1;
-        if (p > 0) {
-            Matrix *t = mulM(B, B);
-            freeM(B);
-            B = t;
+        if (p) {
+            Matrix *tmp = mulM(B, B);
+            freeM(B); B = tmp;
             if (!B) { freeM(R); return NULL; }
         }
     }
@@ -146,15 +152,12 @@ static Matrix *powM(const Matrix *A, long long p) {
     return R;
 }
 
-static void ensure_output_dir(const char *path) {
+static void ensure_dir(const char *path) {
     char buf[512];
     strncpy(buf, path, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
     char *slash = strrchr(buf, '/');
-    if (slash) {
-        *slash = '\0';
-        mkdir_p(buf);
-    }
+    if (slash) { *slash = '\0'; mkdir_p(buf); }
 }
 
 int main(int argc, char **argv) {
@@ -162,65 +165,53 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: wrong argument count\n");
         return 1;
     }
-
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
-        return 1; // NEG#2
+        return 1;
     }
-
-    ensure_output_dir(argv[2]);
+    ensure_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fclose(fin);
-        return 1; // NEG#3
+        return 1;
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
-        fclose(fin);
-        fclose(fout);
-        return 1; // NEG#0
+        fclose(fin); fclose(fout);
+        return 1;
     }
 
     Matrix *A = readM(fin);
-    if (!A) {
-        fprintf(fout, "no solution\n");
-        fclose(fin);
-        fclose(fout);
-        return 0;
-    }
+    if (!A) { fprintf(fout, "no solution\n"); fclose(fin); fclose(fout); return 0; }
 
     if (op == '+') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? sumM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
-        if (B) freeM(B);
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        freeM(B);
     }
     else if (op == '-') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? subM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
-        if (B) freeM(B);
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        freeM(B);
     }
     else if (op == '*') {
         Matrix *B = readM(fin);
         Matrix *R = (B ? mulM(A, B) : NULL);
-        if (!R) fprintf(fout, "no solution\n");
-        else { writeM(fout, R); freeM(R); }
-        if (B) freeM(B);
+        if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
+        freeM(B);
     }
     else if (op == '^') {
         long long p;
         if (fscanf(fin, "%lld", &p) != 1) fprintf(fout, "no solution\n");
         else {
             Matrix *R = powM(A, p);
-            if (!R) fprintf(fout, "no solution\n");
-            else { writeM(fout, R); freeM(R); }
+            if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
         }
     }
     else if (op == '|') {
@@ -231,10 +222,8 @@ int main(int argc, char **argv) {
     }
     else {
         fprintf(stderr, "Error: unknown operator\n");
-        freeM(A);
-        fclose(fin);
-        fclose(fout);
-        return 1; // NEG#1
+        freeM(A); fclose(fin); fclose(fout);
+        return 1;           /* NEG #1 trigger */
     }
 
     freeM(A);
