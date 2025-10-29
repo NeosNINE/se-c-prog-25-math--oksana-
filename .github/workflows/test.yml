@@ -7,6 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -26,6 +27,6 @@ jobs:
       - name: Copy project executable into test folder
         run: cp matrix public-tests-2025/
 
-      - name: Run tests from correct directory
+      - name: Run ITMO 2025 tests
         working-directory: public-tests-2025
-        run: python3 main.py ..
+        run: python3 main.py --program ./matrix --suite math
