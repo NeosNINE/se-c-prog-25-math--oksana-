@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install GCC, Python, and required packages
+      - name: Install GCC, Python, and NumPy
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc python3 python3-pip git
@@ -34,21 +34,23 @@ jobs:
           fi
           ls -la
 
-      - name: Clone 2025 test repository (with submodules)
+      - name: Clone 2025 test repository
         run: |
-          git clone --recurse-submodules https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
+          echo "Cloning public-tests-2025..."
+          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
           cd $GITHUB_WORKSPACE/public-tests-2025
-          git submodule update --init --recursive
+          echo "Fetching submodule testdata..."
+          git clone https://github.com/se-c-cpp-prog/testdata.git testdata
           ls -R testdata || true
 
-      - name: Verify test suite location
+      - name: Verify test suite files
         run: |
           if [ ! -f "$GITHUB_WORKSPACE/public-tests-2025/main.py" ]; then
-            echo "Error: public-tests-2025/main.py not found!"
+            echo "Error: main.py missing."
             exit 1
           fi
           if [ ! -d "$GITHUB_WORKSPACE/public-tests-2025/testdata/math/input" ]; then
-            echo "Error: testdata folder missing!"
+            echo "Error: testdata/math/input missing."
             exit 1
           fi
 
