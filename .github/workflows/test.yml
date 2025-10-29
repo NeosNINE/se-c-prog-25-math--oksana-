@@ -1,18 +1,46 @@
-﻿# .github/workflows/ci.yml
-name: matrix-tests
+﻿name: ITMO Matrix Autograding 2025
+
 on:
   push:
+    branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y gcc python3
-      - name: Build
-        run: gcc main.c -std=c2x -O2 -lm -o matrix
-      - name: Run public tests
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install GCC and Python
         run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc python3 git
+
+      - name: Build matrix calculator
+        run: |
+          gcc main.c -std=c23 -lm -o matrix
+          ls -la
+
+      - name: Clone public test repository (2025)
+        run: |
+          echo "Cloning tests into workspace..."
+          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
+          ls -R $GITHUB_WORKSPACE/public-tests-2025
+
+      - name: Verify test suite location
+        run: |
+          echo "Verifying main.py existence..."
+          if [ ! -f "$GITHUB_WORKSPACE/public-tests-2025/main.py" ]; then
+            echo "Error: public-tests-2025/main.py not found!"
+            exit 1
+          fi
+
+      - name: Run ITMO 2025 matrix tests
+        run: |
+          cd $GITHUB_WORKSPACE
           python3 public-tests-2025/main.py --program ./matrix --suite math
