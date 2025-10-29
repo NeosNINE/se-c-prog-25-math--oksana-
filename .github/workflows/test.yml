@@ -34,26 +34,29 @@ jobs:
           fi
           ls -la
 
-      - name: Clone 2025 test repository with submodules (authenticated)
+      - name: Clone ITMO 2025 tests
         run: |
-          echo "Cloning public-tests-2025 with submodules..."
-          git clone --recurse-submodules https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
+          echo "Cloning test repository..."
+          git clone https://github.com/se-c-cpp-prog/public-tests-2025.git $GITHUB_WORKSPACE/public-tests-2025
+
+          echo "Manually downloading testdata..."
+          rm -rf $GITHUB_WORKSPACE/public-tests-2025/testdata
+          mkdir -p $GITHUB_WORKSPACE/public-tests-2025/testdata
+          cd $GITHUB_WORKSPACE/public-tests-2025/testdata
+          git init
+          git remote add origin https://github.com/se-c-cpp-prog/testdata.git
+          git pull origin main --depth=1
           cd $GITHUB_WORKSPACE/public-tests-2025
-          git submodule update --init --recursive
           ls -R testdata || true
 
-      - name: Verify test suite files
+      - name: Verify testdata
         run: |
-          if [ ! -f "$GITHUB_WORKSPACE/public-tests-2025/main.py" ]; then
-            echo "Error: main.py missing."
-            exit 1
-          fi
           if [ ! -d "$GITHUB_WORKSPACE/public-tests-2025/testdata/math/input" ]; then
-            echo "Error: testdata/math/input missing."
+            echo "Error: testdata/math/input missing after manual fetch"
             exit 1
           fi
 
-      - name: Run ITMO 2025 matrix tests
+      - name: Run tests
         run: |
           cd $GITHUB_WORKSPACE
           python3 public-tests-2025/main.py --program ./matrix --suite math
