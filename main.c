@@ -4,12 +4,15 @@
 #include <math.h>
 
 #ifdef _WIN32
-#include <direct.h>
-#define mkdir_p(p) _mkdir(p)
+  #include <direct.h>
+  #include <process.h>
+  #define mkdir_p(p) _mkdir(p)
+  #define FAST_EXIT(code) _exit(code)
 #else
-#include <sys/stat.h>
-#include <sys/types.h>
-#define mkdir_p(p) mkdir(p, 0777)
+  #include <sys/stat.h>
+  #include <sys/types.h>
+  #define mkdir_p(p) mkdir(p, 0777)
+  #define FAST_EXIT(code) _Exit(code)
 #endif
 
 typedef struct {
@@ -19,10 +22,10 @@ typedef struct {
 
 static Matrix *allocM(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
-    Matrix *M = malloc(sizeof(Matrix));
+    Matrix *M = (Matrix*)malloc(sizeof(Matrix));
     if (!M) return NULL;
     M->r = r; M->c = c;
-    M->a = calloc((size_t)r * c, sizeof(double));
+    M->a = (double*)calloc((size_t)r * c, sizeof(double));
     if (!M->a) { free(M); return NULL; }
     return M;
 }
@@ -36,8 +39,9 @@ static Matrix *readM(FILE *f) {
     if (fscanf(f, "%d%d", &r, &c) != 2) return NULL;
     Matrix *M = allocM(r, c);
     if (!M) return NULL;
-    for (int i = 0; i < r * c; i++)
+    for (int i = 0; i < r * c; i++) {
         if (fscanf(f, "%lf", &M->a[i]) != 1) { freeM(M); return NULL; }
+    }
     return M;
 }
 
@@ -46,8 +50,7 @@ static void writeM(FILE *f, const Matrix *M) {
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
             double v = M->a[i * M->c + j];
-            /* ITMO checker expects INF instead of NaN */
-            if (isnan(v)) v = INFINITY;
+            /* Пишем как есть: NaN -> "nan", +Inf/-Inf -> "inf"/"-inf" по стандартному %g */
             fprintf(f, "%g", v);
             if (j + 1 < M->c) fputc(' ', f);
         }
@@ -55,7 +58,7 @@ static void writeM(FILE *f, const Matrix *M) {
     }
 }
 
-/* blocked multiplication */
+/* блочная матричная мультипликация */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
@@ -94,18 +97,18 @@ static Matrix *subM(const Matrix *A, const Matrix *B) {
 }
 
 static double detM(const Matrix *A) {
-    if (!A || A->r != A->c) return NAN;
+    if (!A || A->r != A->c) return NAN; /* для неквадратной: NAN -> позже "no solution" */
     int n = A->r;
     if (n == 0) return 1.0;
     Matrix *M = allocM(n, n);
     if (!M) return NAN;
-    memcpy(M->a, A->a, sizeof(double) * n * n);
+    memcpy(M->a, A->a, sizeof(double) * (size_t)n * n);
     double det = 1.0;
     for (int i = 0; i < n; i++) {
         int piv = i;
         for (int r = i; r < n; r++)
             if (fabs(M->a[r * n + i]) > fabs(M->a[piv * n + i])) piv = r;
-        if (fabs(M->a[piv * n + i]) < 1e-12) { freeM(M); return 0.0; }
+        if (fabs(M->a[piv * n + i]) < 1e-12) { freeM(M); return 0.0; } /* вырожденная -> 0 */
         if (piv != i) {
             for (int j = 0; j < n; j++) {
                 double t = M->a[i * n + j];
@@ -139,7 +142,7 @@ static Matrix *powM(const Matrix *A, long long p) {
     Matrix *R = identity(A->r);
     Matrix *B = allocM(A->r, A->c);
     if (!R || !B) { freeM(R); freeM(B); return NULL; }
-    memcpy(B->a, A->a, sizeof(double) * A->r * A->c);
+    memcpy(B->a, A->a, sizeof(double) * (size_t)A->r * A->c);
     while (p > 0) {
         if (p & 1) {
             Matrix *tmp = mulM(R, B);
@@ -169,33 +172,41 @@ int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "Error: wrong argument count\n");
         fflush(stderr);
-        exit(1);
+        FAST_EXIT(1);
     }
+
     FILE *fin = fopen(argv[1], "r");
     if (!fin) {
         fprintf(stderr, "Error: cannot open input file\n");
         fflush(stderr);
-        exit(1);   // NEG #2
+        FAST_EXIT(1);   /* NEG #2 */
     }
+
     ensure_dir(argv[2]);
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
         fprintf(stderr, "Error: cannot create output file\n");
         fflush(stderr);
         fclose(fin);
-        exit(1);   // NEG #3
+        FAST_EXIT(1);   /* NEG #3 */
     }
 
     char op;
     if (fscanf(fin, " %c", &op) != 1) {
         fprintf(stderr, "Error: cannot read operator\n");
         fflush(stderr);
-        fclose(fin); fclose(fout);
-        exit(1);   // NEG #0
+        fclose(fin);
+        fclose(fout);
+        FAST_EXIT(1);   /* NEG #0 */
     }
 
     Matrix *A = readM(fin);
-    if (!A) { fprintf(fout, "no solution\n"); fclose(fin); fclose(fout); return 0; }
+    if (!A) {
+        fprintf(fout, "no solution\n");
+        fclose(fin);
+        fclose(fout);
+        return 0;
+    }
 
     if (op == '+') {
         Matrix *B = readM(fin);
@@ -217,17 +228,28 @@ int main(int argc, char **argv) {
     }
     else if (op == '^') {
         long long p;
-        if (fscanf(fin, "%lld", &p) != 1) fprintf(fout, "no solution\n");
-        else {
+        if (fscanf(fin, "%lld", &p) != 1) {
+            fprintf(fout, "no solution\n");
+        } else {
             Matrix *R = powM(A, p);
             if (!R) fprintf(fout, "no solution\n"); else { writeM(fout, R); freeM(R); }
         }
     }
     else if (op == '|') {
-        double d = detM(A);
-        if (isnan(d)) fprintf(fout, "inf\n");  /* ITMO expects inf here */
-        else if (isinf(d)) fprintf(fout, "inf\n");
-        else fprintf(fout, "%g\n", d);
+        /* детерминант: для неквадратной матрицы — no solution */
+        if (A->r != A->c) {
+            fprintf(fout, "no solution\n");
+        } else {
+            double d = detM(A);
+            if (isnan(d)) {
+                /* сюда попадём только при внутренних ошибках — трактуем как no solution */
+                fprintf(fout, "no solution\n");
+            } else if (isinf(d)) {
+                fprintf(fout, "inf\n");
+            } else {
+                fprintf(fout, "%g\n", d);
+            }
+        }
     }
     else {
         fprintf(stderr, "Error: unknown operator\n");
@@ -235,7 +257,7 @@ int main(int argc, char **argv) {
         freeM(A);
         fclose(fin);
         fclose(fout);
-        exit(1);   // NEG #1
+        FAST_EXIT(1);   /* NEG #1 */
     }
 
     freeM(A);
