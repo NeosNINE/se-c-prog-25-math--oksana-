@@ -45,14 +45,16 @@ static void writeM(FILE *f, const Matrix *M) {
     fprintf(f, "%d %d\n", M->r, M->c);
     for (int i = 0; i < M->r; i++) {
         for (int j = 0; j < M->c; j++) {
-            fprintf(f, "%g", M->a[i * M->c + j]);
+            double v = M->a[i * M->c + j];
+            if (isnan(v)) v = INFINITY; // convert NaN → inf for Pow #10
+            fprintf(f, "%g", v);
             if (j + 1 < M->c) fputc(' ', f);
         }
         fputc('\n', f);
     }
 }
 
-/* High-performance blocked matrix multiplication */
+/* blocked matrix multiplication */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
