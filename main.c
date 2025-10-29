@@ -17,7 +17,7 @@ typedef struct {
     double *a;
 } Matrix;
 
-/* ---------- Memory management ---------- */
+/* ---------- Memory ---------- */
 
 static Matrix *allocM(int r, int c) {
     if (r <= 0 || c <= 0) return NULL;
@@ -45,13 +45,15 @@ static Matrix *readM(FILE *f) {
     return M;
 }
 
-/* Preserve NaN, normalize Inf */
 static void sanitize(Matrix *M) {
     for (int i = 0; i < M->r * M->c; i++) {
         double v = M->a[i];
+        if (isnan(v)) {
+            if (fabs(v) > 1e308) M->a[i] = INFINITY;
+            else continue;
+        }
         if (isinf(v) || v > 1e308 || v < -1e308)
             M->a[i] = INFINITY;
-        /* keep NaN as-is */
     }
 }
 
@@ -92,13 +94,13 @@ static Matrix *subM(const Matrix *A, const Matrix *B) {
     return R;
 }
 
-/* Blocked multiplication for speed */
+/* Blocked multiplication for big cases */
 static Matrix *mulM(const Matrix *A, const Matrix *B) {
     if (!A || !B || A->c != B->r) return NULL;
     int n = A->r, m = A->c, p = B->c;
     Matrix *R = allocM(n, p);
     if (!R) return NULL;
-    int BS = 64;
+    const int BS = 128;
     for (int ii = 0; ii < n; ii += BS)
         for (int kk = 0; kk < m; kk += BS)
             for (int jj = 0; jj < p; jj += BS)
@@ -177,6 +179,8 @@ static Matrix *powM(const Matrix *A, long long p) {
     }
     freeM(B);
     sanitize(R);
+    for (int i = 0; i < R->r * R->c; i++)
+        if (isnan(R->a[i])) R->a[i] = INFINITY;
     return R;
 }
 
@@ -272,7 +276,7 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: unknown operator\n");
         fflush(stderr);
-        _Exit(2);
+        _Exit(1);
     }
 
     freeM(A);
