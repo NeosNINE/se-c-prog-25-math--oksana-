@@ -36,11 +36,13 @@ jobs:
 
           echo "Downloading testdata tarball..."
           cd public-tests-2025
-          curl -L -o testdata.tar.gz https://api.github.com/repos/se-c-cpp-prog/testdata/tarball/main
+          rm -rf testdata
+          curl -sL -o testdata.tar.gz https://api.github.com/repos/se-c-cpp-prog/testdata/tarball/main
           mkdir testdata
           tar -xzf testdata.tar.gz --strip-components=1 -C testdata
           rm testdata.tar.gz
-          ls -R testdata | head -30
+          echo "Contents of testdata/math/input:"
+          ls -R testdata/math/input | head -30
 
       - name: Verify testdata structure
         run: |
