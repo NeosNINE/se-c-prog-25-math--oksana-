@@ -7,7 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -19,7 +18,7 @@ jobs:
           pip install numpy
 
       - name: Build project
-        run: gcc main.c -std=c2x -O2 -lm -o matrix
+        run: gcc main.c -std=c2x -lm -o matrix
 
       - name: Clone ITMO test suite
         run: git clone https://github.com/se-c-cpp-prog/public-tests-2025.git
@@ -27,9 +26,15 @@ jobs:
       - name: Copy project executable into test folder
         run: cp matrix public-tests-2025/
 
-      - name: Run official ITMO test suite
+      - name: Run official ITMO tests
         working-directory: public-tests-2025
         run: |
           echo "Running ITMO official matrix tests..."
-          python3 main.py --program ./matrix --suite math || true
+          python3 main.py --program ./matrix --suite math
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-test-results
+          path: public-tests-2025/testdata/math/output/
