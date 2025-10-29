@@ -104,23 +104,31 @@ static Matrix*powM(const Matrix*A,long long p){
     freeM(B);return R;
 }
 
-int main(void){
-    char op[16];
-    char path1[256],path2[256],path3[256];
-    if(scanf("%15s",op)!=1){fprintf(stderr,"Error: no operator\n");return 1;}
-    if(strcmp(op,"det")==0){
-        if(scanf("%255s%255s",path1,path3)!=2){fprintf(stderr,"Error: det args\n");return 1;}
-        FILE*f1=fopen(path1,"r"); if(!f1){fprintf(stderr,"Error: open %s\n",path1);return 1;}
+int main(int argc,char**argv){
+    if(argc<4){
+        fprintf(stderr,"Usage: %s <op> <in1> [in2] <out>\n",argv[0]);
+        return 1;
+    }
+    const char*op=argv[1];
+    const char*in1=argv[2];
+    const char*in2=NULL;
+    const char*out=NULL;
+
+    if(!strcmp(op,"det")){
+        if(argc!=4){fprintf(stderr,"Usage: det <in> <out>\n");return 1;}
+        in1=argv[2]; out=argv[3];
+        FILE*f1=fopen(in1,"r"); if(!f1){fprintf(stderr,"Error: open %s\n",in1);return 1;}
         Matrix*A=readM(f1); fclose(f1);
-        if(!A){fprintf(stderr,"Error: invalid matrix in '%s'\n",path1);return 1;}
+        if(!A){fprintf(stderr,"Error: invalid matrix in '%s'\n",in1);return 1;}
         double d=detM(A); freeM(A);
-        FILE*f3=fopen(path3,"w"); if(!f3)return 1;
+        FILE*f3=fopen(out,"w"); if(!f3)return 1;
         fprintf(f3,"%.6f\n",d); fclose(f3);
         return 0;
     }
-    if(strcmp(op,"sum")==0||strcmp(op,"sub")==0||strcmp(op,"mul")==0){
-        if(scanf("%255s%255s%255s",path1,path2,path3)!=3){fprintf(stderr,"Error: args\n");return 1;}
-        FILE*f1=fopen(path1,"r"),*f2=fopen(path2,"r");
+    if(!strcmp(op,"sum")||!strcmp(op,"sub")||!strcmp(op,"mul")){
+        if(argc!=5){fprintf(stderr,"Usage: %s <in1> <in2> <out>\n",op);return 1;}
+        in1=argv[2]; in2=argv[3]; out=argv[4];
+        FILE*f1=fopen(in1,"r"),*f2=fopen(in2,"r");
         if(!f1||!f2){fprintf(stderr,"Error: open files\n");return 1;}
         Matrix*A=readM(f1),*B=readM(f2); fclose(f1); fclose(f2);
         if(!A||!B){fprintf(stderr,"Error: invalid matrix\n");freeM(A);freeM(B);return 1;}
@@ -129,18 +137,19 @@ int main(void){
         else if(!strcmp(op,"sub"))R=subM(A,B);
         else R=mulM(A,B);
         if(!R){fprintf(stderr,"Error: no result\n");freeM(A);freeM(B);return 1;}
-        FILE*f3=fopen(path3,"w"); writeM(f3,R); fclose(f3);
+        FILE*f3=fopen(out,"w"); writeM(f3,R); fclose(f3);
         freeM(A);freeM(B);freeM(R);return 0;
     }
-    if(strcmp(op,"pow")==0){
-        if(scanf("%255s%255s%255s",path1,path2,path3)!=3){fprintf(stderr,"Error: pow args\n");return 1;}
-        FILE*f1=fopen(path1,"r"); FILE*f2=fopen(path2,"r");
+    if(!strcmp(op,"pow")){
+        if(argc!=5){fprintf(stderr,"Usage: pow <in> <pfile> <out>\n");return 1;}
+        in1=argv[2]; in2=argv[3]; out=argv[4];
+        FILE*f1=fopen(in1,"r"); FILE*f2=fopen(in2,"r");
         if(!f1||!f2){fprintf(stderr,"Error: open files\n");return 1;}
         Matrix*A=readM(f1); long long p; if(fscanf(f2,"%lld",&p)!=1){fprintf(stderr,"Error: power file\n");return 1;}
         fclose(f1); fclose(f2);
         Matrix*R=powM(A,p); freeM(A);
         if(!R){fprintf(stderr,"Error: pow fail\n");return 1;}
-        FILE*f3=fopen(path3,"w"); writeM(f3,R); fclose(f3); freeM(R);return 0;
+        FILE*f3=fopen(out,"w"); writeM(f3,R); fclose(f3); freeM(R);return 0;
     }
     fprintf(stderr,"Error: unknown op\n"); return 1;
 }
